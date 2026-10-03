@@ -1,0 +1,15 @@
+# Songs of Syx official sources: licensed for modding only, never redistribute
+ref/
+# personal files
+save-backup/
+LauncherSettings.backup.txt
+MODDING_PLAN.md
+# build output
+exporter/build/
+exporter/mod/
+minecraft/build/
+minecraft/run/
+minecraft/.gradle/
+.gradle/
+*.log
+__pycache__/

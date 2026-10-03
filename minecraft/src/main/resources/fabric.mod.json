@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"id": "syxcraft",
+	"version": "${version}",
+	"name": "Syxcraft",
+	"description": "Places a Songs of Syx city (exported .syxmap) into a Minecraft world.",
+	"authors": ["gmz"],
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": ["dev.sos2mc.syxcraft.Syxcraft"],
+		"client": ["dev.sos2mc.syxcraft.client.SyxcraftClient"]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
