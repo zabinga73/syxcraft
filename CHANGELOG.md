@@ -2,6 +2,16 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.3.0
+Syxcraft:
+- Fight pit: the game's entrance passages are a tunnel from outside to the arena under the stands, plus a ramp of
+  stairs from the arena floor up into the stands. The outer wall is open where they come out.
+- Stage: a wooden platform 2 blocks high with steps all round and lanterns at the corners.
+- Execution: the gallows is a raised wooden scaffold with stairs, posts and a beam with hanging chains (was rows
+  of lecterns). Chopping blocks, gibbet cages and crosses get simple designs too.
+- Statues: a figure with Minecraft player proportions, exactly centred on its pedestal.
+- Mines: their lanterns hang at the bottom of the pit instead of floating at city level.
+
 ## 1.2.0
 Syxcraft:
 - Road and plaza blocks: Fungus Road brown mushroom block, Fungus Highway mushroom stem, Dark Plaza black glazed

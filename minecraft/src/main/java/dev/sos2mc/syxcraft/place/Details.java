@@ -101,7 +101,8 @@ final class Details {
 				|| room.startsWith("WELL_") || room.startsWith("SPEAKER_") || room.startsWith("POOL_")
 				|| room.startsWith("_WATER") || room.startsWith("_CONSTRUCTION") || room.startsWith("MONUMENT_NATURE")
 				|| room.startsWith("MONUMENT_TORCH") || room.startsWith("_BENCH") || room.startsWith("MONUMENT_SCULPTURE")
-				|| room.startsWith("FIGHTPIT_") || room.startsWith("_STOCKADE") || room.startsWith("_WATERPUMP"))
+				|| room.startsWith("FIGHTPIT_") || room.startsWith("_STOCKADE") || room.startsWith("_WATERPUMP")
+				|| room.startsWith("STAGE_") || room.startsWith("_EXECUTION"))
 			return;
 		long h = CityPlan.hash(tx * 31 + 7, ty * 17 + 11);
 		int x0 = p.blockX(tx), z0 = p.blockZ(ty);
@@ -111,7 +112,7 @@ final class Details {
 			for (int u = 0; u < s; u++)
 				piece.place(w, x0 + u, p.floorY(i) + 1, z0 + v, u, v, focusDir(tx, ty, bp), CityPlan.hash(x0 + u, z0 + v));
 		if (m.flag(i, SyxMap.F_CANDLE))
-			light(w, x0 + (s - 1), z0 + (s - 1));
+			light(w, x0 + (s - 1), z0 + (s - 1), p.floorY(i));
 	}
 
 	interface Piece {
@@ -244,6 +245,104 @@ final class Details {
 			stockade(w, f);
 		else if (room.startsWith("_WATERPUMP"))
 			pump(w, f);
+		else if (room.startsWith("STAGE_"))
+			stage(w, f, bp);
+		else if (room.startsWith("_EXECUTION"))
+			execution(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
+	}
+
+	/* --------------------------------------------------------------- stage */
+
+	/** a wooden platform 2 blocks high, with two steps up all the way round (the game's outer ring) */
+	private void stage(WorldWriter w, SyxMap.Furniture f, SyxMap.Blueprint bp) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
+		int ring = s; // the outer tile ring, in blocks
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int x = x0 + dx, z = z0 + dz;
+				int e = Math.min(Math.min(dx, dz), Math.min(W - 1 - dx, Dp - 1 - dz)); // blocks in from the edge
+				if (e >= ring) {
+					w.set(x, B + 1, z, P("minecraft:spruce_planks"));
+					w.set(x, B + 2, z, P(e == ring ? "minecraft:stripped_spruce_log[axis=y]" : "minecraft:spruce_planks"));
+					continue;
+				}
+				// steps facing the platform: the side the nearest edge is on decides the facing
+				String facing = dx == e ? "east" : W - 1 - dx == e ? "west" : dz == e ? "south" : "north";
+				boolean corner = (dx < ring || W - 1 - dx < ring) && (dz < ring || Dp - 1 - dz < ring);
+				int step = Math.min(e, 1); // 0 = outer step, 1 = inner step
+				if (corner) {
+					for (int y = B + 1; y <= B + 1 + step; y++)
+						w.set(x, y, z, P("minecraft:spruce_planks"));
+				} else {
+					if (step == 1)
+						w.set(x, B + 1, z, P("minecraft:spruce_planks"));
+					w.set(x, B + 1 + step, z, P("minecraft:spruce_stairs[facing=" + facing + "]"));
+				}
+			}
+		// lanterns on posts at the platform's corners
+		int[][] cs = { { ring, ring }, { W - 1 - ring, ring }, { ring, Dp - 1 - ring }, { W - 1 - ring, Dp - 1 - ring } };
+		for (int[] c : cs) {
+			w.set(x0 + c[0], B + 3, z0 + c[1], P("minecraft:spruce_fence"));
+			w.set(x0 + c[0], B + 4, z0 + c[1], P("minecraft:lantern"));
+		}
+	}
+
+	/* ----------------------------------------------------------- execution */
+
+	private void execution(WorldWriter w, SyxMap.Furniture f, String group) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), bw = f.w() * s, bh = f.h() * s;
+		boolean alongZ = bh >= bw;
+		int A = alongZ ? bw : bh, L = alongZ ? bh : bw;
+		if (group.contains("GALLOWS")) {
+			// a scaffold: plank deck 3 up on log posts, stairs at one end, a beam with chains over the middle
+			int deck = B + 3, mid0 = (A - 1) / 2, mid1 = A / 2;
+			int stairs = Math.min(3, L / 4);
+			String up = alongZ ? "south" : "east"; // climbing towards the far end
+			for (int b = 0; b < L; b++)
+				for (int a = 0; a < A; a++) {
+					int x = alongZ ? x0 + a : x0 + b, z = alongZ ? z0 + b : z0 + a;
+					if (b < stairs) {
+						for (int y = B + 1; y < B + 1 + b; y++)
+							w.set(x, y, z, P("minecraft:spruce_planks"));
+						w.set(x, B + 1 + b, z, P("minecraft:spruce_stairs[facing=" + up + "]"));
+						continue;
+					}
+					boolean post = (a == 0 || a == A - 1) && (b == stairs || b == L - 1 || (b - stairs) % 4 == 0);
+					if (post)
+						for (int y = B + 1; y < deck; y++)
+							w.set(x, y, z, P("minecraft:spruce_log"));
+					w.set(x, deck, z, P("minecraft:spruce_planks"));
+					boolean upright = (a == mid0 || a == mid1) && (b == stairs + 1 || b == L - 2);
+					if (upright)
+						for (int y = deck + 1; y <= deck + 4; y++)
+							w.set(x, y, z, P("minecraft:spruce_log"));
+					else if ((a == mid0 || a == mid1) && b > stairs + 1 && b < L - 2) {
+						w.set(x, deck + 4, z, P("minecraft:stripped_spruce_log[axis=" + (alongZ ? "z" : "x") + "]"));
+						if ((b - stairs) % 3 == 0 && a == mid0)
+							w.set(x, deck + 3, z, P("minecraft:iron_chain"));
+					}
+				}
+		} else if (group.contains("CHOPPING")) {
+			for (int b = 1; b < L; b += 3)
+				for (int a = 1; a < A; a += 3) {
+					int x = alongZ ? x0 + a : x0 + b, z = alongZ ? z0 + b : z0 + a;
+					w.set(x, B + 1, z, P("minecraft:stripped_oak_log"));
+				}
+		} else if (group.contains("CAGE") || group.contains("GIBBET")) {
+			int x = x0 + bw / 2, z = z0 + bh / 2;
+			for (int y = B + 1; y <= B + 5; y++)
+				w.set(x, y, z, P("minecraft:spruce_log"));
+			w.set(x + 1, B + 5, z, P("minecraft:spruce_fence"));
+			w.set(x + 1, B + 4, z, P("minecraft:iron_chain"));
+			w.set(x + 1, B + 3, z, P("minecraft:iron_bars"));
+			w.set(x + 1, B + 2, z, P("minecraft:iron_bars"));
+		} else { // a cross
+			int x = x0 + bw / 2, z = z0 + bh / 2;
+			for (int y = B + 1; y <= B + 5; y++)
+				w.set(x, y, z, P("minecraft:spruce_log"));
+			w.set(x - 1, B + 4, z, P("minecraft:spruce_log[axis=x]"));
+			w.set(x + 1, B + 4, z, P("minecraft:spruce_log[axis=x]"));
+		}
 	}
 
 	/* ---------------------------------------------------------- sculptures */
@@ -294,24 +393,29 @@ final class Details {
 					w.set(x, y + 2, z, P("minecraft:chiseled_quartz_block"));
 				}
 			}
-		int cx = x0 + W / 2, cz = z0 + Dp / 2, f = y + 3;
-		String leg = "minecraft:diorite_wall";
-		if (W >= 5) {
-			for (int k = 0; k < 2; k++) {
-				w.set(cx - 1, f + k, cz, P(leg));
-				w.set(cx + 1, f + k, cz, P(leg));
+		// a figure with Minecraft player proportions: as wide as the torso is its head, arms 1 wide, two legs.
+		// Its width and depth match the footprint's parity, so it stands exactly in the middle.
+		int f = y + 3;
+		boolean even = W % 2 == 0;
+		int fw = even ? 2 : 1; // torso / head width
+		int fx0 = x0 + (W - fw) / 2, fd = Dp % 2 == 0 ? 2 : 1, fz0 = z0 + (Dp - fd) / 2;
+		int legs = W >= 5 ? 3 : 1, torso = W >= 5 ? 3 : 1, head = W >= 5 ? fw : 1;
+		for (int dz = 0; dz < fd; dz++) {
+			int z = fz0 + dz;
+			for (int k = 0; k < legs; k++)
+				for (int dx = 0; dx < fw; dx++)
+					w.set(fx0 + dx, f + k, z, P("minecraft:quartz_pillar"));
+			for (int k = 0; k < torso; k++) {
+				for (int dx = 0; dx < fw; dx++)
+					w.set(fx0 + dx, f + legs + k, z, P(k == torso - 1 ? "minecraft:chiseled_quartz_block" : "minecraft:quartz_block"));
+				if (W >= 5) { // arms
+					w.set(fx0 - 1, f + legs + k, z, P("minecraft:quartz_pillar"));
+					w.set(fx0 + fw, f + legs + k, z, P("minecraft:quartz_pillar"));
+				}
 			}
-			for (int k = 2; k < 4; k++) {
-				for (int dx = -1; dx <= 1; dx++)
-					w.set(cx + dx, f + k, cz, P(k == 3 && dx == 0 ? "minecraft:chiseled_quartz_block" : "minecraft:quartz_block"));
-				w.set(cx - 2, f + k, cz, P(leg)); // arms
-				w.set(cx + 2, f + k, cz, P(leg));
-			}
-			w.set(cx, f + 4, cz, P("minecraft:calcite")); // head
-		} else {
-			w.set(cx, f, cz, P(leg));
-			w.set(cx, f + 1, cz, P("minecraft:quartz_block"));
-			w.set(cx, f + 2, cz, P("minecraft:calcite"));
+			for (int k = 0; k < head; k++)
+				for (int dx = 0; dx < fw; dx++)
+					w.set(fx0 + dx, f + legs + torso + k, z, P("minecraft:smooth_quartz"));
 		}
 	}
 
@@ -323,7 +427,8 @@ final class Details {
 	 */
 	private void fightPit(WorldWriter w, SyxMap.Furniture f, SyxMap.Blueprint bp) {
 		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
-		// 0 outside, 1 arena, 2 rim, 3 seat, 4 wall, 5 tower, 6 stairs (gateway)
+		// 0 outside, 1 arena, 2 rim, 3 seat, 4 wall, 5 tower, 6 passage tunnel, 7 ramp up to the stands,
+		// 8 gap in the outer wall (the game leaves stands tiles in the wall line where a passage comes out)
 		byte[] cat = new byte[W * Dp];
 		for (int ty = 0; ty < f.h(); ty++)
 			for (int tx = 0; tx < f.w(); tx++) {
@@ -335,7 +440,9 @@ final class Details {
 					SyxMap.FurnTile ft = bp.tiles.get(m.furnTile[i] & 0xFF);
 					String sp = ft == null || ft.spriteKey() == null ? "" : ft.spriteKey().toUpperCase();
 					c = sp.startsWith("RIM") ? 2 : sp.startsWith("SEAT") ? 3 : sp.startsWith("WALL") ? 4
-							: sp.startsWith("TOWER") ? 5 : sp.startsWith("STAIRS") ? 6 : (byte) 1;
+							: sp.startsWith("TOWER") ? 5 : sp.startsWith("STAIRS_RIGHT") ? 7 : sp.startsWith("STAIRS") ? 6 : (byte) 1;
+					if (c == 3 && (tx == 0 || ty == 0 || tx == f.w() - 1 || ty == f.h() - 1))
+						c = 8;
 				}
 				for (int v = 0; v < s; v++)
 					for (int u = 0; u < s; u++)
@@ -396,9 +503,23 @@ final class Details {
 						w.set(x, y, z, P("minecraft:spruce_log"));
 					w.set(x, wallTop + 4, z, P("minecraft:lantern"));
 				}
-				case 6 -> { // gateway: open at ground level, wall continues overhead
+				case 6 -> { // vomitorium: a tunnel from outside to the arena, the stands carry on above it
+					int h = Math.max(2, Math.min(d + 1, 10));
+					for (int y = B + 4; y < Math.max(B + 5, B + h); y++)
+						w.set(x, y, z, P("minecraft:spruce_planks"));
+					if (h >= 5)
+						w.set(x, B + h, z, P("minecraft:spruce_stairs[facing=" + awayFrom(dist, cat, W, Dp, dx, dz) + "]"));
+				}
+				case 7 -> { // a ramp of stairs from the arena floor up into the stands, rising one per block
+					int h = Math.max(1, Math.min(d, 10));
+					for (int y = B + 1; y < B + h; y++)
+						w.set(x, y, z, P("minecraft:spruce_planks"));
+					w.set(x, B + h, z, P("minecraft:spruce_stairs[facing=" + awayFrom(dist, cat, W, Dp, dx, dz) + "]"));
+				}
+				case 8 -> { // the passage's way out through the outer wall
 					for (int y = B + 4; y <= wallTop; y++)
 						w.set(x, y, z, P("minecraft:spruce_planks"));
+					w.set(x, wallTop + 1, z, P("minecraft:spruce_fence"));
 				}
 				default -> {
 				}
@@ -1020,8 +1141,9 @@ final class Details {
 
 	/* ------------------------------------------------------------ helpers */
 
-	private void light(WorldWriter w, int x, int z) {
-		for (int y = B + 1; y <= B + H; y++) {
+	/** a lantern in the first free block above the floor at y0 (the ground, or a quarry's bottom) */
+	private void light(WorldWriter w, int x, int z, int y0) {
+		for (int y = y0 + 1; y <= y0 + H; y++) {
 			if (w.get(x, y, z).isAir()) {
 				w.set(x, y, z, P("minecraft:lantern"));
 				return;
