@@ -295,7 +295,7 @@ final class Details {
 				}
 			}
 		int cx = x0 + W / 2, cz = z0 + Dp / 2, f = y + 3;
-		String leg = "minecraft:polished_diorite_wall";
+		String leg = "minecraft:diorite_wall";
 		if (W >= 5) {
 			for (int k = 0; k < 2; k++) {
 				w.set(cx - 1, f + k, cz, P(leg));

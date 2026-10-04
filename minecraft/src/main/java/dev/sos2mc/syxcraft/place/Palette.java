@@ -53,22 +53,22 @@ public final class Palette {
 		d("floor.MINE", "minecraft:gravel");
 		d("floor.MINE_MUD", "minecraft:mud");
 		d("floor.NATURE1", "minecraft:cobblestone"); // "Cobblestone Road"
-		d("floor.NATURE2", "minecraft:rooted_dirt");
+		d("floor.NATURE2", "minecraft:brown_glazed_terracotta"); // "Forest Plaza"
 		d("floor.STONE1", "minecraft:stone_bricks"); // "Paved Road"
 		d("floor.STONE2", "minecraft:polished_andesite"); // "Highway", cut stone
 		d("floor.STONE3", "minecraft:andesite");
-		d("floor.STONE_BRICK", "minecraft:stone_bricks");
+		d("floor.STONE_BRICK", "minecraft:bricks"); // "Bricked Road"
 		d("floor.STONE_CROSS", "minecraft:chiseled_stone_bricks");
 		d("floor.STONE_LARGE_DARK", "minecraft:polished_deepslate");
 		d("floor.STONE_MEDIUM_DARK", "minecraft:deepslate_tiles");
 		d("floor.WOOD", "minecraft:spruce_planks");
 		d("floor.WOOD_SQUARE", "minecraft:oak_planks");
-		d("floor.DARK1", "minecraft:dark_oak_planks");
-		d("floor.DARK2", "minecraft:polished_blackstone_bricks");
-		d("floor.DARK3", "minecraft:deepslate_bricks");
-		d("floor.DECOR1", "minecraft:terracotta");
-		d("floor.DECOR2", "minecraft:white_terracotta");
-		d("floor.DECOR3", "minecraft:light_gray_terracotta");
+		d("floor.DARK1", "minecraft:brown_mushroom_block"); // "Fungus Road"
+		d("floor.DARK2", "minecraft:mushroom_stem"); // "Fungus Highway"
+		d("floor.DARK3", "minecraft:black_glazed_terracotta"); // "Dark Plaza"
+		d("floor.DECOR1", "minecraft:white_glazed_terracotta"); // "Plaza"
+		d("floor.DECOR2", "minecraft:polished_sulfur"); // "Sacred Path"
+		d("floor.DECOR3", "minecraft:crying_obsidian"); // "Crystal Water"
 		d("floor.worn", "minecraft:coarse_dirt");
 
 		// building structures (SoS structure keys: _MUD, WOOD, STONE, GRAND, _MOUNTAIN)
@@ -139,13 +139,21 @@ public final class Palette {
 	 * Defaults from earlier versions. palette.json is written with every default, so a value equal to an old
 	 * default means "never edited" and is upgraded to the current default; anything else is the user's choice.
 	 */
-	private static final Map<String, String> OLD_DEFAULTS = Map.of(
-			"floor.DIRT", "minecraft:dirt_path", // < 0.5.0
-			"floor._DEFAULT_ROAD", "minecraft:dirt_path", // < 0.5.0
-			"ground.worn", "minecraft:coarse_dirt", // < 0.5.0
-			"floor.NATURE1", "minecraft:moss_block", // < 1.1.0
-			"floor.STONE1", "minecraft:cobblestone", // < 1.1.0
-			"floor.STONE2", "minecraft:stone"); // < 1.1.0
+	private static final Map<String, String> OLD_DEFAULTS = Map.ofEntries(
+			Map.entry("floor.DIRT", "minecraft:dirt_path"), // < 0.5.0
+			Map.entry("floor._DEFAULT_ROAD", "minecraft:dirt_path"), // < 0.5.0
+			Map.entry("ground.worn", "minecraft:coarse_dirt"), // < 0.5.0
+			Map.entry("floor.NATURE1", "minecraft:moss_block"), // < 1.1.0
+			Map.entry("floor.STONE1", "minecraft:cobblestone"), // < 1.1.0
+			Map.entry("floor.STONE2", "minecraft:stone"), // < 1.1.0
+			Map.entry("floor.NATURE2", "minecraft:rooted_dirt"), // < 1.2.0
+			Map.entry("floor.STONE_BRICK", "minecraft:stone_bricks"), // < 1.2.0
+			Map.entry("floor.DARK1", "minecraft:dark_oak_planks"), // < 1.2.0
+			Map.entry("floor.DARK2", "minecraft:polished_blackstone_bricks"), // < 1.2.0
+			Map.entry("floor.DARK3", "minecraft:deepslate_bricks"), // < 1.2.0
+			Map.entry("floor.DECOR1", "minecraft:terracotta"), // < 1.2.0
+			Map.entry("floor.DECOR2", "minecraft:white_terracotta"), // < 1.2.0
+			Map.entry("floor.DECOR3", "minecraft:light_gray_terracotta")); // < 1.2.0
 
 	private static void structure(String k, String wall, String base, String pillar, String roofStairs, String roofBlock,
 			String door, String window, String ceiling) {

@@ -2,6 +2,13 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.2.0
+Syxcraft:
+- Road and plaza blocks: Fungus Road brown mushroom block, Fungus Highway mushroom stem, Dark Plaza black glazed
+  terracotta, Plaza white glazed terracotta, Forest Plaza brown glazed terracotta, Sacred Path polished sulfur,
+  Crystal Water crying obsidian, Bricked Road bricks. palette.json values you never changed pick these up.
+- Fix: statue legs and arms used a block that doesn't exist (polished diorite wall); they're diorite walls now.
+
 ## 1.1.0
 Syxcraft:
 - Sculptures: pillars are classical quartz columns (stepped platform, flared base and capital, round shaft); statues
