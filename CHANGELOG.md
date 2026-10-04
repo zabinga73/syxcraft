@@ -2,6 +2,18 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.5.0
+Syxcraft:
+- Chambers (rich people's houses): a bed with a gold-studded dark oak headboard, red carpets with a gold runner
+  down the aisle, cushioned dark oak benches you can sit on, a blackstone fireplace with gold and candles, and
+  corners heaped with gold blocks, raw gold, emeralds, the odd diamond block, chests and pots.
+- Graveyard: laid out from the player's own arrangement: headstones (stone walls, some with a lit candle), dirt
+  grave plots, flowerbeds, dirt pathways and dark spruce trees sized like the game's (was a field of stone stacks).
+- Statues face the way they do in the game: one turned a quarter is turned in Minecraft too.
+- Fix: pillars 2x2 tiles big had no shaft, leaving their capitals floating.
+- Height variety leans harder towards the low end: about 80% of buildings get less than half the maximum.
+- `/syx check` reports `highWaterColumns` (water above city level).
+
 ## 1.4.0
 Syxcraft:
 - Mixed woods (placer screen): each building's wooden roof in a random wood (oak, spruce, birch, jungle, acacia,

@@ -472,7 +472,7 @@ public final class CityPlan {
 			int id = extra.size();
 			long h = hash(start % bw + X0, start / bw + Z0) ^ seed;
 			double u = ((h >>> 11) % 10000) / 10000.0;
-			extra.add((int) Math.round(max * u * u));
+			extra.add((int) Math.round(max * u * u * u)); // ~80% in the lower half, most near the bottom
 			wood.add(WOODS[(int) ((h >>> 3) % WOODS.length)]);
 			buildingOf[start] = id;
 			q.add(start);

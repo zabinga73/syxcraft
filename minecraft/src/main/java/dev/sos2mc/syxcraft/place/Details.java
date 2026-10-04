@@ -96,6 +96,14 @@ final class Details {
 			return;
 		String sprite = ft.spriteKey() == null ? "" : ft.spriteKey().toUpperCase();
 		String room = bp.key == null ? "" : bp.key;
+		if (room.startsWith("GRAVEYARD_")) {
+			graveTile(w, tx, ty, i, sprite, bp);
+			return;
+		}
+		if (room.startsWith("_HOME_CHAMBER")) {
+			chamberTile(w, tx, ty, i, ft.index(), bp);
+			return;
+		}
 		// shrines/temples, homes and the throne get whole-item designs in furnitureItem()
 		if (room.startsWith("SHRINE_") || room.startsWith("TEMPLE_") || room.equals("_HOME") || room.startsWith("_THRONE")
 				|| room.startsWith("WELL_") || room.startsWith("SPEAKER_") || room.startsWith("POOL_")
@@ -247,8 +255,173 @@ final class Details {
 			pump(w, f);
 		else if (room.startsWith("STAGE_"))
 			stage(w, f, bp);
+		else if (room.startsWith("GRAVEYARD_") && "TREE".equalsIgnoreCase(item.groupName()))
+			graveTree(w, f);
 		else if (room.startsWith("_EXECUTION"))
 			execution(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
+	}
+
+	/* ----------------------------------------------------------- graveyard */
+
+	private String spriteAt(int tx, int ty, SyxMap.Blueprint bp, int room) {
+		if (!m.inBounds(tx, ty))
+			return null;
+		int j = m.idx(tx, ty);
+		if (m.roomId(j) != room || !p.hasFurniture(j))
+			return null;
+		SyxMap.FurnTile t = bp.tiles.get(m.furnTile[j] & 0xFF);
+		return t == null || t.spriteKey() == null ? "" : t.spriteKey().toUpperCase();
+	}
+
+	/** graveyard tiles, laid out as the player arranged them: headstones, grave plots, flowerbeds, pathways */
+	private void graveTile(WorldWriter w, int tx, int ty, int i, String sprite, SyxMap.Blueprint bp) {
+		int x0 = p.blockX(tx), z0 = p.blockZ(ty), room = m.roomId(i);
+		long th = CityPlan.hash(tx * 13 + 1, ty * 7 + 3);
+		for (int v = 0; v < s; v++)
+			for (int u = 0; u < s; u++) {
+				int x = x0 + u, z = z0 + v;
+				long h = CityPlan.hash(x, z);
+				if (sprite.startsWith("TOMBSTONE")) {
+					w.set(x, B, z, P("minecraft:grass_block"));
+					// the headstone stands at the plot's end of the tile
+					int k = -1;
+					for (int d = 0; d < 4 && k < 0; d++) {
+						String n = spriteAt(tx + CityPlan.DX[d], ty + CityPlan.DY[d], bp, room);
+						if (n != null && n.startsWith("GRAVE"))
+							k = d;
+					}
+					boolean edge = k < 0 ? v == s - 1 : (k == 0 && v == 0) || (k == 2 && v == s - 1) || (k == 3 && u == 0) || (k == 1 && u == s - 1);
+					if (edge) {
+						String[] stones = { "minecraft:stone_brick_wall", "minecraft:mossy_stone_brick_wall", "minecraft:cobblestone_wall",
+								"minecraft:andesite_wall", "minecraft:mossy_cobblestone_wall" };
+						w.set(x, B + 1, z, P(stones[(int) (th % stones.length)]));
+						if ((th >> 8) % 5 == 0)
+							w.set(x, B + 2, z, P("minecraft:candle[candles=1,lit=true]"));
+					}
+				} else if (sprite.startsWith("GRAVE")) {
+					w.set(x, B, z, P((h & 3) == 0 ? "minecraft:rooted_dirt" : (h & 3) == 1 ? "minecraft:podzol" : "minecraft:coarse_dirt"));
+				} else if (sprite.startsWith("FLOWER")) {
+					w.set(x, B, z, P("minecraft:grass_block"));
+					w.set(x, B + 1, z, CityPlan.Blocks1.flower((int) (h >> 5)));
+				} else if (sprite.startsWith("MON")) {
+					w.set(x, B, z, P("minecraft:grass_block")); // under a tree, planted by graveTree
+				} else {
+					w.set(x, B, z, P("minecraft:dirt_path"));
+				}
+			}
+	}
+
+	/** a graveyard tree: a dark spruce, as big as its item */
+	private void graveTree(WorldWriter w, SyxMap.Furniture f) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
+		boolean wide = W >= 4 && W % 2 == 0;
+		int tw = wide ? 2 : 1, tx0 = x0 + (W - tw) / 2, tz0 = z0 + (Dp - tw) / 2;
+		double cx = x0 + (W - 1) / 2.0, cz = z0 + (Dp - 1) / 2.0;
+		int trunk = 4 + W, maxR = Math.max(1, W / 2);
+		BlockState log = P("minecraft:spruce_log"), leaves = P("minecraft:spruce_leaves[persistent=true]");
+		for (int y = B + 1; y <= B + trunk; y++)
+			for (int a = 0; a < tw; a++)
+				for (int b = 0; b < tw; b++)
+					w.set(tx0 + a, y, tz0 + b, log);
+		int top = B + trunk + 1;
+		for (int j = 0; j <= trunk - 2; j++) { // layers down from the tip, widening in steps
+			double r = Math.min(maxR, (j + 1) / 2) + (wide ? 0.5 : 0) + (j % 2 == 1 ? 0.3 : 0);
+			int y = top - j;
+			for (int dz = -maxR - 1; dz <= maxR + 1; dz++)
+				for (int dx = -maxR - 1; dx <= maxR + 1; dx++) {
+					int x = (int) Math.round(cx + dx), z = (int) Math.round(cz + dz);
+					if (Math.hypot(x - cx, z - cz) <= r + 0.2)
+						w.setIfAir(x, y, z, leaves);
+				}
+		}
+		w.setIfAir((int) Math.round(cx), top + 1, (int) Math.round(cz), leaves);
+	}
+
+	/* ------------------------------------------------------------ chambers */
+
+	/**
+	 * A rich person's house: a canopy-headed bed, red carpets with a gold runner down the aisle, cushioned dark oak
+	 * benches, a blackstone fireplace with gold and candles, and corners heaped with gold, gems and chests.
+	 * Tile indices are the game's chamber tiles (3/4 bed head, 1/2 bed body, 5/6 benches, 7/8 mantel, 9 carpet,
+	 * 10 hoard, 11/12 aisle).
+	 */
+	private void chamberTile(WorldWriter w, int tx, int ty, int i, int idx, SyxMap.Blueprint bp) {
+		int x0 = p.blockX(tx), z0 = p.blockZ(ty), room = m.roomId(i);
+		SyxMap.Room r = room > 0 && room <= m.rooms.size() ? m.rooms.get(room - 1) : null;
+		double ccx = r == null ? x0 : (p.blockX(r.x1()) + p.blockX(r.x2())) / 2.0, ccz = r == null ? z0 : (p.blockZ(r.y1()) + p.blockZ(r.y2())) / 2.0;
+		// direction from the room's middle out to this tile: where its wall is
+		double ox = x0 + s / 2.0 - ccx, oz = z0 + s / 2.0 - ccz;
+		int out = Math.abs(ox) > Math.abs(oz) ? (ox > 0 ? 1 : 3) : (oz > 0 ? 2 : 0);
+		for (int v = 0; v < s; v++)
+			for (int u = 0; u < s; u++) {
+				int x = x0 + u, z = z0 + v;
+				long h = CityPlan.hash(x * 3 + 7, z * 5 + 1);
+				boolean wallSide = (out == 0 && v == 0) || (out == 2 && v == s - 1) || (out == 3 && u == 0) || (out == 1 && u == s - 1);
+				switch (idx) {
+				case 9 -> w.set(x, B + 1, z, P("minecraft:red_carpet"));
+				case 11, 12 -> w.set(x, B + 1, z, P("minecraft:yellow_carpet"));
+				case 3, 4 -> { // bed head: headboard against the wall, beds' heads in front of it
+					int k = bedBody(tx, ty, bp, room);
+					boolean back = (k == 2 && v == 0) || (k == 0 && v == s - 1) || (k == 1 && u == 0) || (k == 3 && u == s - 1);
+					if (k < 0 || back) {
+						w.set(x, B + 1, z, P("minecraft:dark_oak_planks"));
+						w.set(x, B + 2, z, P(((u + v) & 1) == 0 ? "minecraft:gold_block" : "minecraft:dark_oak_planks"));
+						w.set(x, B + 3, z, P("minecraft:dark_oak_fence"));
+					} else if (s == 1 || !back) {
+						int fx = x + CityPlan.DX[k], fz = z + CityPlan.DY[k];
+						String facing = CityPlan.DIR[(k + 2) % 4]; // head towards the headboard
+						w.set(x, B + 1, z, P("minecraft:red_bed[part=head,facing=" + facing + "]"), WorldWriter.FLAGS_RAW);
+						w.set(fx, B + 1, fz, P("minecraft:red_bed[part=foot,facing=" + facing + "]"), WorldWriter.FLAGS_RAW);
+					}
+				}
+				case 1, 2 -> { // the rest of the bed area: a red spread, the beds' feet are set by the head tile
+					if (w.get(x, B + 1, z).isAir())
+						w.set(x, B + 1, z, P("minecraft:red_carpet"));
+				}
+				case 5, 6 -> { // cushioned benches, backs to the wall
+					w.set(x, B + 1, z, P("minecraft:dark_oak_stairs[facing=" + CityPlan.DIR[out] + "]"));
+					Seats.cushion(w.level, x, B + 1, z, out, "minecraft:red_carpet");
+				}
+				case 7, 8 -> { // fireplace: blackstone against the wall, fire / gold and candles in front
+					if (wallSide || s == 1) {
+						for (int y = B + 1; y <= B + 3; y++)
+							w.set(x, y, z, P("minecraft:polished_blackstone_bricks"));
+					} else if (idx == 7) {
+						w.set(x, B + 1, z, P("minecraft:campfire[lit=true]"));
+						w.set(x, B + 3, z, P("minecraft:chiseled_polished_blackstone"));
+					} else {
+						w.set(x, B + 1, z, P("minecraft:gold_block"));
+						w.set(x, B + 2, z, P("minecraft:candle[candles=4,lit=true]"));
+					}
+				}
+				case 10 -> { // the hoard
+					int pick = (int) (h % 20);
+					String b = pick < 7 ? "minecraft:gold_block" : pick < 10 ? "minecraft:raw_gold_block" : pick < 12 ? "minecraft:emerald_block"
+							: pick < 13 ? "minecraft:diamond_block" : pick < 16 ? "minecraft:chest[facing=" + CityPlan.DIR[(out + 2) % 4] + "]"
+							: pick < 18 ? "minecraft:decorated_pot" : "minecraft:gold_block";
+					w.set(x, B + 1, z, P(b));
+					if (pick < 7 && ((h >> 6) & 1) == 0)
+						w.set(x, B + 2, z, P("minecraft:gold_block")); // stacked bullion
+					else if (pick >= 18)
+						w.set(x, B + 2, z, P("minecraft:lantern"));
+				}
+				default -> {
+				}
+				}
+			}
+	}
+
+	/** direction from a bed-head tile to the bed body (tiles 1/2), -1 if none */
+	private int bedBody(int tx, int ty, SyxMap.Blueprint bp, int room) {
+		for (int k = 0; k < 4; k++) {
+			int nx = tx + CityPlan.DX[k], ny = ty + CityPlan.DY[k];
+			if (!m.inBounds(nx, ny) || m.roomId(m.idx(nx, ny)) != room || !p.hasFurniture(m.idx(nx, ny)))
+				continue;
+			int t = m.furnTile[m.idx(nx, ny)] & 0xFF;
+			if (t == 1 || t == 2)
+				return k;
+		}
+		return -1;
 	}
 
 	/* --------------------------------------------------------------- stage */
@@ -352,13 +525,14 @@ final class Details {
 		if (group.contains("PILLAR"))
 			column(w, x0, z0, W, Dp);
 		else
-			statue(w, x0, z0, W, Dp);
+			statue(w, x0, z0, W, Dp, (f.rot() & 1) == 1); // rotated a quarter turn in the game: face east/west
 	}
 
 	/** a classical column: stepped quartz platform, moulded base, round fluted-looking shaft, capital and abacus */
 	private void column(WorldWriter w, int x0, int z0, int W, int Dp) {
 		double cx = (W - 1) / 2.0, cz = (Dp - 1) / 2.0;
-		double r = W >= 5 ? 1.6 : 0.7;
+		// shaft radius for any size: 2x2 tiles (4 blocks) used to get no shaft at all, leaving the capital floating
+		double r = Math.max(0.75, W * 0.27);
 		int L = Math.max(4, W * 2 - 2);
 		int y = B + 1;
 		for (int dz = 0; dz < Dp; dz++)
@@ -381,7 +555,7 @@ final class Details {
 	}
 
 	/** a simple white figure on a polished pedestal */
-	private void statue(WorldWriter w, int x0, int z0, int W, int Dp) {
+	private void statue(WorldWriter w, int x0, int z0, int W, int Dp, boolean sideways) {
 		int y = B + 1;
 		for (int dz = 0; dz < Dp; dz++)
 			for (int dx = 0; dx < W; dx++) {
@@ -394,29 +568,39 @@ final class Details {
 				}
 			}
 		// a figure with Minecraft player proportions: as wide as the torso is its head, arms 1 wide, two legs.
-		// Its width and depth match the footprint's parity, so it stands exactly in the middle.
+		// Its width and depth match the footprint's parity, so it stands exactly in the middle. 'across' is the
+		// figure's shoulder line: x normally, z when the game turned the statue a quarter.
 		int f = y + 3;
-		boolean even = W % 2 == 0;
-		int fw = even ? 2 : 1; // torso / head width
-		int fx0 = x0 + (W - fw) / 2, fd = Dp % 2 == 0 ? 2 : 1, fz0 = z0 + (Dp - fd) / 2;
-		int legs = W >= 5 ? 3 : 1, torso = W >= 5 ? 3 : 1, head = W >= 5 ? fw : 1;
-		for (int dz = 0; dz < fd; dz++) {
-			int z = fz0 + dz;
-			for (int k = 0; k < legs; k++)
-				for (int dx = 0; dx < fw; dx++)
-					w.set(fx0 + dx, f + k, z, P("minecraft:quartz_pillar"));
-			for (int k = 0; k < torso; k++) {
-				for (int dx = 0; dx < fw; dx++)
-					w.set(fx0 + dx, f + legs + k, z, P(k == torso - 1 ? "minecraft:chiseled_quartz_block" : "minecraft:quartz_block"));
-				if (W >= 5) { // arms
-					w.set(fx0 - 1, f + legs + k, z, P("minecraft:quartz_pillar"));
-					w.set(fx0 + fw, f + legs + k, z, P("minecraft:quartz_pillar"));
+		int across = sideways ? Dp : W, deep = sideways ? W : Dp, a0 = sideways ? z0 : x0, d0 = sideways ? x0 : z0;
+		int fw = across % 2 == 0 ? 2 : 1, fd = deep % 2 == 0 ? 2 : 1;
+		int fa0 = a0 + (across - fw) / 2, fd0 = d0 + (deep - fd) / 2;
+		boolean big = Math.min(W, Dp) >= 4;
+		int legs = big ? 3 : 1, torso = big ? 3 : 1, head = big ? fw : 1;
+		for (int k = 0; k < fd; k++) {
+			int dd = fd0 + k;
+			for (int j = 0; j < legs; j++)
+				for (int c = 0; c < fw; c++)
+					setAD(w, sideways, fa0 + c, dd, f + j, "minecraft:quartz_pillar");
+			for (int j = 0; j < torso; j++) {
+				for (int c = 0; c < fw; c++)
+					setAD(w, sideways, fa0 + c, dd, f + legs + j, j == torso - 1 ? "minecraft:chiseled_quartz_block" : "minecraft:quartz_block");
+				if (big) { // arms
+					setAD(w, sideways, fa0 - 1, dd, f + legs + j, "minecraft:quartz_pillar");
+					setAD(w, sideways, fa0 + fw, dd, f + legs + j, "minecraft:quartz_pillar");
 				}
 			}
-			for (int k = 0; k < head; k++)
-				for (int dx = 0; dx < fw; dx++)
-					w.set(fx0 + dx, f + legs + torso + k, z, P("minecraft:smooth_quartz"));
+			for (int j = 0; j < head; j++)
+				for (int c = 0; c < fw; c++)
+					setAD(w, sideways, fa0 + c, dd, f + legs + torso + j, "minecraft:smooth_quartz");
 		}
+	}
+
+	/** set a block by (across, deep) coordinates: (x, z) normally, (z, x) for a figure turned sideways */
+	private void setAD(WorldWriter w, boolean sideways, int a, int d, int y, String block) {
+		if (sideways)
+			w.set(d, y, a, P(block));
+		else
+			w.set(a, y, d, P(block));
 	}
 
 	/* ----------------------------------------------------------- fight pit */

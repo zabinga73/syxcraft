@@ -30,6 +30,10 @@ public final class Seats {
 
 	/** a cushion on the stair at x, y, z whose back is towards dir (0 N, 1 E, 2 S, 3 W) */
 	static void cushion(ServerLevel level, int x, int y, int z, int dir) {
+		cushion(level, x, y, z, dir, "minecraft:brown_carpet");
+	}
+
+	static void cushion(ServerLevel level, int x, int y, int z, int dir, String carpet) {
 		Display.BlockDisplay d = EntityTypes.BLOCK_DISPLAY.create(level, EntitySpawnReason.COMMAND);
 		if (d == null)
 			return;
@@ -37,7 +41,7 @@ public final class Seats {
 		double ox = dir == 1 ? 0.25 : dir == 3 ? 0.75 : 0.5, oz = dir == 2 ? 0.25 : dir == 0 ? 0.75 : 0.5;
 		boolean alongX = dir == 0 || dir == 2;
 		d.snapTo(x + ox, y + 0.5, z + oz, 0, 0);
-		d.setBlockState(Palette.parse("minecraft:brown_carpet"));
+		d.setBlockState(Palette.parse(carpet));
 		// the carpet model fills a block from the entity origin: shrink it to the seat half and centre it
 		Vector3f scale = alongX ? new Vector3f(0.96f, 1, 0.48f) : new Vector3f(0.48f, 1, 0.96f);
 		d.setTransformation(new Transformation(new Vector3f(-scale.x / 2, 0.001f, -scale.z / 2), new Quaternionf(), scale,

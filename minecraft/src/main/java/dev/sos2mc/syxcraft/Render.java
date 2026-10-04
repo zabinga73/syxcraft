@@ -145,14 +145,26 @@ final class Render {
 					if (level.getBlockState(pos.set(x, yy, z)).isAir())
 						attic++;
 			}
+		// water above city level never belongs there (it shows as standing water pillars)
+		int highWater = 0;
+		for (int z = j.plan.Z0; z < j.plan.Z0 + j.plan.bh; z++)
+			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++) {
+				int top = j.w.anyTop(x, z);
+				for (int yy = j.plan.B + 1; yy <= top; yy++)
+					if (!level.getBlockState(pos.set(x, yy, z)).getFluidState().isEmpty()) {
+						if (highWater++ < 5)
+							dev.sos2mc.syxcraft.Syxcraft.LOG.info("high water at {} {} {}", x, yy, z);
+						break;
+					}
+			}
 		// leftover natural terrain high over the city (floating mountain tips): nothing built reaches B + 96
 		int floating = 0;
 		for (int z = j.plan.Z0; z < j.plan.Z0 + j.plan.bh; z++)
 			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++)
 				if (j.w.anyTop(x, z) > j.plan.B + 96)
 					floating++;
-		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d",
-				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating);
+		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d",
+				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater);
 	}
 
 	private static int clamp(int v) {

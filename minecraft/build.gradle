@@ -14,6 +14,13 @@ repositories {
 loom {
 	splitEnvironmentSourceSets()
 
+	runs {
+		// big placements (scale 3, whole map) and /syx check load a lot of chunks
+		server {
+			vmArg "-Xmx6G"
+		}
+	}
+
 	mods {
 		"syxcraft" {
 			sourceSet sourceSets.main
