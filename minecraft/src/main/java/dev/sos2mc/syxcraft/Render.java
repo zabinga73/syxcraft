@@ -121,7 +121,7 @@ final class Render {
 			}
 		// glass panes: how many have no connection at all (they render as loose posts)
 		int panes = 0, loose = 0, houseWalls = 0;
-		for (int yy = j.plan.B + 1; yy <= j.plan.B + j.plan.H; yy++)
+		for (int yy = j.plan.B + 1; yy <= j.plan.B + j.plan.maxHeight(); yy++)
 			for (int z = j.plan.Z0; z < j.plan.Z0 + j.plan.bh; z++)
 				for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++) {
 					BlockState s = level.getBlockState(pos.set(x, yy, z));
@@ -134,9 +134,10 @@ final class Render {
 						houseWalls++;
 				}
 		// attics: air between the ceiling and the roof over buildings
-		int attic = 0, R = j.plan.B + j.plan.H + 1;
+		int attic = 0;
 		for (int z = j.plan.Z0; z < j.plan.Z0 + j.plan.bh; z++)
 			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++) {
+				int R = j.plan.B + j.plan.heightAt(x - j.plan.X0, z - j.plan.Z0) + 1;
 				if (j.plan.roofDistAt(x - j.plan.X0, z - j.plan.Z0) < 0 || !level.getBlockState(pos.set(x, R, z)).isSolidRender())
 					continue; // only under building roofs (hills with trees on them aren't attics)
 				int top = j.w.anyTop(x, z);

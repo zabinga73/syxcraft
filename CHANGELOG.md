@@ -2,6 +2,15 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.4.0
+Syxcraft:
+- Mixed woods (placer screen): each building's wooden roof in a random wood (oak, spruce, birch, jungle, acacia,
+  dark oak, mangrove, cherry). Stone, brick and tile roofs keep their material. Off by default.
+- Taller (placer screen): height variety. Each building gets 0 to +5/+10/+20/+30 extra blocks of wall, most in the
+  lower half. The value is for scale 2 and scales with the scale. Off by default.
+- Tall walls get rows of windows like storeys, and ceiling lanterns hang on chains down to the usual height, so tall
+  interiors stay lit.
+
 ## 1.3.0
 Syxcraft:
 - Fight pit: the game's entrance passages are a tunnel from outside to the arena under the stands, plus a ramp of

@@ -68,6 +68,10 @@ public final class PlaceSettings {
 	public int valleys = 5;
 	/** most villagers the CITIZENS layer spawns; a big city is sampled evenly down to this (0 = everyone) */
 	public int citizenCap = 100;
+	/** each building's wooden roof in a random wood instead of its material's */
+	public boolean roofWoods = false;
+	/** most extra wall height a building may get, in blocks at scale 2 (scaled with the scale; 0 = all the same) */
+	public int heightVariety = 0;
 
 	public boolean has(int layer) {
 		return (layers & layer) != 0;
@@ -75,6 +79,11 @@ public final class PlaceSettings {
 
 	public void set(int layer, boolean on) {
 		layers = on ? layers | layer : layers & ~layer;
+	}
+
+	/** the most extra height a building gets at this scale */
+	public int maxExtraHeight() {
+		return (int) Math.round(heightVariety * scale / 2.0);
 	}
 
 	public int interiorHeight() {
@@ -96,6 +105,8 @@ public final class PlaceSettings {
 		s.hills = hills;
 		s.valleys = valleys;
 		s.citizenCap = citizenCap;
+		s.roofWoods = roofWoods;
+		s.heightVariety = heightVariety;
 		s.layers = layers;
 		s.quarryDepth = quarryDepth;
 		s.wallHeight = wallHeight;
@@ -121,6 +132,8 @@ public final class PlaceSettings {
 		b.writeVarInt(hills);
 		b.writeVarInt(valleys);
 		b.writeVarInt(citizenCap);
+		b.writeBoolean(roofWoods);
+		b.writeVarInt(heightVariety);
 	}
 
 	public static PlaceSettings read(FriendlyByteBuf b) {
@@ -142,6 +155,8 @@ public final class PlaceSettings {
 		s.hills = Math.max(1, Math.min(64, b.readVarInt()));
 		s.valleys = Math.max(0, Math.min(64, b.readVarInt()));
 		s.citizenCap = Math.max(0, Math.min(100000, b.readVarInt()));
+		s.roofWoods = b.readBoolean();
+		s.heightVariety = Math.max(0, Math.min(64, b.readVarInt()));
 		return s;
 	}
 }

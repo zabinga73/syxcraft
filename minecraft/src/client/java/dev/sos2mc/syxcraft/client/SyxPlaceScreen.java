@@ -172,6 +172,14 @@ public class SyxPlaceScreen extends Screen {
 						st.citizenCap = v;
 				}));
 		y += ROW;
+		addRenderableWidget(CycleButton.onOffBuilder(st.roofWoods)
+				.withTooltip(v -> Tooltip.create(Component.literal("Each building's wooden roof in a random wood (oak, spruce, birch, jungle, acacia, dark oak, mangrove, cherry) instead of its material's.")))
+				.create(right, y, colW / 2 - 2, 20, Component.literal("Mixed woods"), (b, v) -> st.roofWoods = v));
+		addRenderableWidget(CycleButton.builder((Integer h) -> Component.literal(h == 0 ? "Off" : "+" + h), st.heightVariety)
+				.withValues(0, 5, 10, 20, 30)
+				.withTooltip(h -> Tooltip.create(Component.literal("Height variety: each building gets up to this many extra blocks of wall, most of them in the lower half. Set for scale 2 and scaled with the scale.")))
+				.create(right + colW / 2 + 2, y, colW / 2 - 2, 20, Component.literal("Taller"), (b, v) -> st.heightVariety = v));
+		y += ROW;
 		addRenderableWidget(CycleButton.onOffBuilder(SyxcraftClient.showPreview)
 				.withTooltip(v -> Tooltip.create(Component.literal("Show the city's outline in the world with particles.")))
 				.create(right, y, colW, 20, Component.literal("Preview outline"), (b, v) -> SyxcraftClient.showPreview = v));

@@ -707,12 +707,16 @@ final class Details {
 					int side = dz == 0 ? 0 : dx == bw - 1 ? 1 : dz == bh - 1 ? 2 : dx == 0 ? 3 : -1;
 					if (side < 0 || !houseWallHere(f, dx, dz, bw, bh))
 						continue;
-					for (int y = B + 1; y <= B + H; y++)
+					int hb = p.heightAt(x0 + dx - p.X0, z0 + dz - p.Z0); // up to this building's ceiling
+					for (int y = B + 1; y <= B + hb; y++)
 						w.set(x0 + dx, y, z0 + dz, wall);
 					taken.add(key(x0 + dx, z0 + dz));
 				}
 			houseDoor(w, f, item, bp, x0, z0, bw, bh, taken);
-			w.set(x0 + bw / 2, B + H, z0 + bh / 2, P("minecraft:lantern[hanging=true]"));
+			int lx = x0 + bw / 2, lz = z0 + bh / 2, hb = p.heightAt(lx - p.X0, lz - p.Z0);
+			for (int y = B + H + 1; y <= B + hb; y++) // a taller house hangs its lantern on a chain
+				w.set(lx, y, lz, P("minecraft:iron_chain"));
+			w.set(lx, B + H, lz, P("minecraft:lantern[hanging=true]"));
 		}
 
 		List<int[]> spots = new ArrayList<>();

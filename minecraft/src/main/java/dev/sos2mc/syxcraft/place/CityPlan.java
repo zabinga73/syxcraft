@@ -1,7 +1,9 @@
 package dev.sos2mc.syxcraft.place;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import dev.sos2mc.syxcraft.map.SyxMap;
@@ -44,6 +46,11 @@ public final class CityPlan {
 	final String[] pit;
 	/** per region block: Chebyshev distance to the outside of its building, -1 = not a building */
 	int[] roofDist;
+	/** per region block: which connected building it belongs to (-1 = none); per building: extra height and roof wood */
+	private int[] buildingOf;
+	private int[] buildingExtra;
+	private String[] buildingWood;
+	static final String[] WOODS = { "oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry" };
 	/** per tile: distance (8-way, capped) to the nearest settled tile or water; where topography may lift ground */
 	final int[] openDist;
 	/** per region block: how far topography moved the ground from B (filled in by the column pass) */
@@ -444,6 +451,86 @@ public final class CityPlan {
 					}
 				}
 		}
+		labelBuildings();
+	}
+
+	/**
+	 * Splits the building blocks into connected buildings (each has one roof) and gives each its own extra height
+	 * (0..max, most in the lower half) and roof wood.
+	 */
+	private void labelBuildings() {
+		int n = bw * bh;
+		buildingOf = new int[n];
+		java.util.Arrays.fill(buildingOf, -1);
+		List<Integer> extra = new ArrayList<>();
+		List<String> wood = new ArrayList<>();
+		int max = st.maxExtraHeight();
+		ArrayDeque<Integer> q = new ArrayDeque<>();
+		for (int start = 0; start < n; start++) {
+			if (roofDist[start] < 0 || buildingOf[start] >= 0)
+				continue;
+			int id = extra.size();
+			long h = hash(start % bw + X0, start / bw + Z0) ^ seed;
+			double u = ((h >>> 11) % 10000) / 10000.0;
+			extra.add((int) Math.round(max * u * u));
+			wood.add(WOODS[(int) ((h >>> 3) % WOODS.length)]);
+			buildingOf[start] = id;
+			q.add(start);
+			while (!q.isEmpty()) {
+				int i = q.poll(), x = i % bw, z = i / bw;
+				for (int k = 0; k < 4; k++) {
+					int nx = x + DX[k], nz = z + DY[k];
+					if (nx < 0 || nz < 0 || nx >= bw || nz >= bh)
+						continue;
+					int j = nx + nz * bw;
+					if (roofDist[j] >= 0 && buildingOf[j] < 0) {
+						buildingOf[j] = id;
+						q.add(j);
+					}
+				}
+			}
+		}
+		buildingExtra = extra.stream().mapToInt(Integer::intValue).toArray();
+		buildingWood = wood.toArray(new String[0]);
+	}
+
+	/** interior height of the building at this region block (H outside buildings) */
+	public int heightAt(int bx, int bz) {
+		if (buildingOf == null || bx < 0 || bz < 0 || bx >= bw || bz >= bh)
+			return H;
+		int b = buildingOf[bx + bz * bw];
+		return b < 0 ? H : H + buildingExtra[b];
+	}
+
+	/** the tallest interior height of any building */
+	public int maxHeight() {
+		int m = 0;
+		if (buildingExtra != null)
+			for (int e : buildingExtra)
+				m = Math.max(m, e);
+		return H + m;
+	}
+
+	/** a roof block id in this building's random wood, when the option is on and the roof is wooden */
+	private String roofWood(String id, int bx, int bz) {
+		if (!st.roofWoods || buildingOf == null || id == null)
+			return id;
+		int b = buildingOf[bx + bz * bw];
+		if (b < 0)
+			return id;
+		for (String w : WOODS)
+			for (String kind : new String[] { "_stairs", "_planks" })
+				if (id.equals("minecraft:" + w + kind))
+					return "minecraft:" + buildingWood[b] + kind;
+		return id;
+	}
+
+	/** a lantern hanging at the usual height; in a taller building it hangs on a chain from the ceiling */
+	public void hangLantern(BlockState[] col, int bx, int bz) {
+		int hb = heightAt(bx, bz);
+		for (int y = B + H + 1; y <= B + hb; y++)
+			put(col, y, Palette.parse("minecraft:iron_chain"));
+		put(col, B + H, Palette.parse("minecraft:lantern[hanging=true]"));
 	}
 
 	public int roofDistAt(int bx, int bz) {
@@ -778,6 +865,7 @@ public final class CityPlan {
 	private int building(BlockState[] col, int i, int tx, int ty, int u, int v, int bx, int bz, int X, int Z, byte k, long h) {
 		String sk = structKey(map.structure(i));
 		BlockState wall = pal.get("wall." + sk, "wall.default");
+		final int H = heightAt(bx, bz); // this building's own interior height (height variety)
 		switch (k) {
 		case WALL, WALL_BROKEN -> {
 			int wh = k == WALL ? H : Math.max(1, H / 2);
@@ -788,7 +876,9 @@ public final class CityPlan {
 				BlockState b = corner ? pillar(sk) : wall;
 				if (k == WALL_BROKEN && ((h >> y) & 3) == 0)
 					b = Palette.parse("minecraft:mossy_cobblestone");
-				if (win >= 0 && y >= B + 2 && y <= B + Math.max(2, H - 1))
+				// windows in rows, one per storey of the standard height, so tall walls aren't one glass strip
+				int storey = this.H, pos = (y - B - 1) % storey + 1;
+				if (win >= 0 && pos >= 2 && pos <= Math.max(2, storey - 1) && y <= B + Math.max(2, H - 1))
 					// glass only in the outermost layer of a thick wall; the layers behind it stay open
 					b = outerLayer(win, u, v) ? pal.get("window." + sk, "window.default") : Blocks.AIR.defaultBlockState();
 				put(col, y, b);
@@ -801,7 +891,7 @@ public final class CityPlan {
 				put(col, y, Blocks.AIR.defaultBlockState());
 			// hanging lanterns on a 5-block grid keep every interior lit (no mob spawning indoors)
 			if (Math.floorMod(X, 5) == 2 && Math.floorMod(Z, 5) == 2)
-				put(col, B + H, Palette.parse("minecraft:lantern[hanging=true]"));
+				hangLantern(col, bx, bz);
 			return B + H;
 		}
 		case DOOR -> {
@@ -838,12 +928,17 @@ public final class CityPlan {
 	/** hipped (or flat) roof from the building distance field; returns the top y */
 	private int roof(BlockState[] col, int bx, int bz, int i, long h) {
 		String sk = structKey(map.structure(i));
-		int R = B + H + 1;
+		int R = B + heightAt(bx, bz) + 1;
 		int d = roofDistAt(bx, bz);
+		BlockState roofBlock = pal.get("roofBlock." + sk, "roofBlock.default");
+		String rbId = idOf(roofBlock), rbWood = roofWood(rbId, bx, bz);
+		if (!rbWood.equals(rbId))
+			roofBlock = Palette.parse(rbWood); // only re-read when the wood changed, so palette block states survive
+		String roofStairs = roofWood(blockId("roof." + sk), bx, bz);
 		if (d < 0)
 			return R;
 		if (st.roof == PlaceSettings.Roof.FLAT) {
-			put(col, R, pal.get("roofBlock." + sk, "roofBlock.default"));
+			put(col, R, roofBlock);
 			if (d == 0) {
 				put(col, R + 1, pal.get("wall." + sk, "wall.default"));
 				return R + 1;
@@ -856,7 +951,7 @@ public final class CityPlan {
 			put(col, R, pal.get("ceiling." + sk, "ceiling.default"));
 		// the space under the roof slope is filled solid: a dark hollow attic is a mob spawner
 		for (int y = R + 1; y < R + r; y++)
-			put(col, y, pal.get("roofBlock." + sk, "roofBlock.default"));
+			put(col, y, roofBlock);
 		// stairs face the neighbour that's higher up the slope
 		int best = -1, bestR = r;
 		for (int k = 0; k < 4; k++) {
@@ -868,9 +963,9 @@ public final class CityPlan {
 			}
 		}
 		if (best >= 0)
-			put(col, R + r, Palette.parse(blockId("roof." + sk) + "[facing=" + DIR[best] + "]"));
+			put(col, R + r, Palette.parse(roofStairs + "[facing=" + DIR[best] + "]"));
 		else
-			put(col, R + r, pal.get("roofBlock." + sk, "roofBlock.default"));
+			put(col, R + r, roofBlock);
 		return R + r;
 	}
 
@@ -1064,7 +1159,10 @@ public final class CityPlan {
 
 	/** the block id of a palette entry without its properties (to add our own) */
 	String blockId(String key) {
-		BlockState st = pal.get(key);
+		return idOf(pal.get(key));
+	}
+
+	static String idOf(BlockState st) {
 		return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
 	}
 
