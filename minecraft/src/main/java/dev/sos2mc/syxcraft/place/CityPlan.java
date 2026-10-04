@@ -199,6 +199,11 @@ public final class CityPlan {
 	}
 
 	/** ground surface y of a region block column after topography (B if outside the region or not yet built) */
+	/** y of the floor a tile's furniture stands on: the bottom of a quarry pit, otherwise the ground */
+	public int floorY(int i) {
+		return pit[i] != null ? B - st.quarryDepth : B;
+	}
+
 	public int groundY(int bx, int bz) {
 		bx = Math.max(0, Math.min(bw - 1, bx));
 		bz = Math.max(0, Math.min(bh - 1, bz));
@@ -353,10 +358,11 @@ public final class CityPlan {
 					if (!map.inBounds(tx, ty))
 						continue;
 					int i = map.idx(tx, ty);
-					if (map.roomId(i) != r.id() || hasFurniture(i))
+					if (map.roomId(i) != r.id())
 						continue;
+					// storage and auxiliaries stand on the quarry floor, so their tiles are dug too
 					pit[i] = mineral;
-					if (ladder == null)
+					if (ladder == null && !hasFurniture(i))
 						ladder = new long[] { tx, ty };
 				}
 			if (ladder != null)
@@ -653,6 +659,13 @@ public final class CityPlan {
 			put(col, B + 1, Palette.parse(crop));
 			return B + 1;
 		}
+		if (key.startsWith("POOL_") && roomEdge(bx, bz)) {
+			// a little wooden rim and fence, so a pond by a lake doesn't read as part of the lake
+			put(col, B, Palette.parse("minecraft:spruce_planks"));
+			put(col, B - 1, pal.get("ground.subsoil"));
+			put(col, B + 1, Palette.parse("minecraft:spruce_fence"));
+			return B + 1;
+		}
 		if (key.startsWith("POOL_") || key.startsWith("_WATERCANAL") || key.startsWith("_WATERDRAIN")) {
 			boolean canal = !key.startsWith("POOL_");
 			boolean full = map.hasWater(i);
@@ -700,6 +713,23 @@ public final class CityPlan {
 					put(col, B + 2, Palette.parse(pile));
 				return B + 2;
 			}
+			return B;
+		}
+		if (key.startsWith("_STOCKADE")) {
+			// trodden yard inside a palisade of spruce logs; the gate (the room's entrance item) is left open
+			put(col, B, Palette.parse((h & 3) == 0 ? "minecraft:coarse_dirt" : (h & 3) == 1 ? "minecraft:dirt_path" : "minecraft:dirt"));
+			if (roomEdge(bx, bz) && !hasFurniture(i)) {
+				int top = B + H + 1;
+				for (int y = B + 1; y < top; y++)
+					put(col, y, Palette.parse("minecraft:spruce_log"));
+				put(col, top, Palette.parse("minecraft:spruce_fence"));
+				return top;
+			}
+			return B;
+		}
+		if (key.startsWith("FIGHTPIT_")) {
+			// the arena floor (and the ground under the stands, which Details builds)
+			put(col, B, Palette.parse("minecraft:sand"));
 			return B;
 		}
 		if (key.startsWith("PASTURE_")) {

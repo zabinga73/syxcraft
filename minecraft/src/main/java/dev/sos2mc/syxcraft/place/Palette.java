@@ -52,10 +52,10 @@ public final class Palette {
 		d("floor.SAND", "minecraft:sand");
 		d("floor.MINE", "minecraft:gravel");
 		d("floor.MINE_MUD", "minecraft:mud");
-		d("floor.NATURE1", "minecraft:moss_block");
+		d("floor.NATURE1", "minecraft:cobblestone"); // "Cobblestone Road"
 		d("floor.NATURE2", "minecraft:rooted_dirt");
-		d("floor.STONE1", "minecraft:cobblestone");
-		d("floor.STONE2", "minecraft:stone");
+		d("floor.STONE1", "minecraft:stone_bricks"); // "Paved Road"
+		d("floor.STONE2", "minecraft:polished_andesite"); // "Highway", cut stone
 		d("floor.STONE3", "minecraft:andesite");
 		d("floor.STONE_BRICK", "minecraft:stone_bricks");
 		d("floor.STONE_CROSS", "minecraft:chiseled_stone_bricks");
@@ -142,7 +142,10 @@ public final class Palette {
 	private static final Map<String, String> OLD_DEFAULTS = Map.of(
 			"floor.DIRT", "minecraft:dirt_path", // < 0.5.0
 			"floor._DEFAULT_ROAD", "minecraft:dirt_path", // < 0.5.0
-			"ground.worn", "minecraft:coarse_dirt"); // < 0.5.0
+			"ground.worn", "minecraft:coarse_dirt", // < 0.5.0
+			"floor.NATURE1", "minecraft:moss_block", // < 1.1.0
+			"floor.STONE1", "minecraft:cobblestone", // < 1.1.0
+			"floor.STONE2", "minecraft:stone"); // < 1.1.0
 
 	private static void structure(String k, String wall, String base, String pillar, String roofStairs, String roofBlock,
 			String door, String window, String ceiling) {

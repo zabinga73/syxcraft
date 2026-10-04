@@ -2,6 +2,20 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.1.0
+Syxcraft:
+- Sculptures: pillars are classical quartz columns (stepped platform, flared base and capital, round shaft); statues
+  are a simple white figure on a polished pedestal. Torch monuments stand on polished andesite and quartz.
+- Fight pit: a small wooden coliseum built from the game's layout: sand arena, log rim, stands of spruce stairs
+  rising outwards, an outer wall with towers, and open gateways.
+- Stockade: a spruce-log palisade with a gate at its entrance, and beds, tables, barrels and the like scattered
+  over the yard.
+- Water pump: stone floor, a rimmed basin, granite pump housings, rows of barrels and an outlet channel, after the
+  game's sprite. Ponds and pools get a plank rim with a spruce fence.
+- Mines and clay pits: storage and auxiliaries stand on the quarry floor instead of on pillars at city level.
+- Roads: Cobblestone Road is cobblestone (was moss), Paved Road stone bricks, Highway polished andesite.
+  palette.json values you never changed pick these up automatically.
+
 ## 1.0.0
 First public release: Syxcraft 1.0.0 and the Syx Map Exporter 1.0.0 (export format v3). Same features as 0.11.0
 plus exporter 0.3.0.

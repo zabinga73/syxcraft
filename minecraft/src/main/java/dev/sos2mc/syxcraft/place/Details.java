@@ -39,7 +39,7 @@ final class Details {
 					int i = m.idx(tx, fty);
 					if (veg && p.kind[i] == CityPlan.TREE)
 						tree(w, tx, fty, i);
-					if (furn && p.hasFurniture(i) && p.pit[i] == null)
+					if (furn && p.hasFurniture(i))
 						furnitureTile(w, tx, fty, i);
 					if (p.st.has(PlaceSettings.BUILDINGS) && p.kind[i] == CityPlan.DOOR)
 						doorTorch(w, tx, fty, i);
@@ -100,7 +100,8 @@ final class Details {
 		if (room.startsWith("SHRINE_") || room.startsWith("TEMPLE_") || room.equals("_HOME") || room.startsWith("_THRONE")
 				|| room.startsWith("WELL_") || room.startsWith("SPEAKER_") || room.startsWith("POOL_")
 				|| room.startsWith("_WATER") || room.startsWith("_CONSTRUCTION") || room.startsWith("MONUMENT_NATURE")
-				|| room.startsWith("MONUMENT_TORCH") || room.startsWith("_BENCH"))
+				|| room.startsWith("MONUMENT_TORCH") || room.startsWith("_BENCH") || room.startsWith("MONUMENT_SCULPTURE")
+				|| room.startsWith("FIGHTPIT_") || room.startsWith("_STOCKADE") || room.startsWith("_WATERPUMP"))
 			return;
 		long h = CityPlan.hash(tx * 31 + 7, ty * 17 + 11);
 		int x0 = p.blockX(tx), z0 = p.blockZ(ty);
@@ -108,7 +109,7 @@ final class Details {
 		Piece piece = choose(room, sprite, ft, CityPlan.hash(m.roomId(i) * 97 + 13, 7));
 		for (int v = 0; v < s; v++)
 			for (int u = 0; u < s; u++)
-				piece.place(w, x0 + u, B + 1, z0 + v, u, v, focusDir(tx, ty, bp), CityPlan.hash(x0 + u, z0 + v));
+				piece.place(w, x0 + u, p.floorY(i) + 1, z0 + v, u, v, focusDir(tx, ty, bp), CityPlan.hash(x0 + u, z0 + v));
 		if (m.flag(i, SyxMap.F_CANDLE))
 			light(w, x0 + (s - 1), z0 + (s - 1));
 	}
@@ -235,6 +236,281 @@ final class Details {
 			torchMonument(w, f);
 		else if (room.startsWith("_BENCH"))
 			bench(w, f);
+		else if (room.startsWith("MONUMENT_SCULPTURE"))
+			sculpture(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
+		else if (room.startsWith("FIGHTPIT_"))
+			fightPit(w, f, bp);
+		else if (room.startsWith("_STOCKADE"))
+			stockade(w, f);
+		else if (room.startsWith("_WATERPUMP"))
+			pump(w, f);
+	}
+
+	/* ---------------------------------------------------------- sculptures */
+
+	private void sculpture(WorldWriter w, SyxMap.Furniture f, String group) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
+		if (group.contains("PILLAR"))
+			column(w, x0, z0, W, Dp);
+		else
+			statue(w, x0, z0, W, Dp);
+	}
+
+	/** a classical column: stepped quartz platform, moulded base, round fluted-looking shaft, capital and abacus */
+	private void column(WorldWriter w, int x0, int z0, int W, int Dp) {
+		double cx = (W - 1) / 2.0, cz = (Dp - 1) / 2.0;
+		double r = W >= 5 ? 1.6 : 0.7;
+		int L = Math.max(4, W * 2 - 2);
+		int y = B + 1;
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				double d = Math.hypot(dx - cx, dz - cz);
+				int x = x0 + dx, z = z0 + dz;
+				w.set(x, y, z, P("minecraft:smooth_quartz")); // stylobate
+				boolean inner = dx > 0 && dz > 0 && dx < W - 1 && dz < Dp - 1;
+				if (inner || W < 5)
+					w.set(x, y + 1, z, P("minecraft:quartz_bricks"));
+				if (d <= r + 1.2)
+					w.set(x, y + 2, z, P("minecraft:chiseled_quartz_block")); // base moulding, wider than the shaft
+				if (d <= r)
+					for (int k = 0; k < L; k++)
+						w.set(x, y + 3 + k, z, P("minecraft:quartz_pillar")); // shaft
+				if (d <= r + 1.2)
+					w.set(x, y + 3 + L, z, P("minecraft:chiseled_quartz_block")); // capital flares out
+				w.set(x, y + 4 + L, z, P("minecraft:smooth_quartz")); // square abacus over the whole footprint
+			}
+	}
+
+	/** a simple white figure on a polished pedestal */
+	private void statue(WorldWriter w, int x0, int z0, int W, int Dp) {
+		int y = B + 1;
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int x = x0 + dx, z = z0 + dz;
+				w.set(x, y, z, P("minecraft:smooth_quartz"));
+				boolean inner = W < 5 || (dx > 0 && dz > 0 && dx < W - 1 && dz < Dp - 1);
+				if (inner) {
+					w.set(x, y + 1, z, P("minecraft:polished_andesite"));
+					w.set(x, y + 2, z, P("minecraft:chiseled_quartz_block"));
+				}
+			}
+		int cx = x0 + W / 2, cz = z0 + Dp / 2, f = y + 3;
+		String leg = "minecraft:polished_diorite_wall";
+		if (W >= 5) {
+			for (int k = 0; k < 2; k++) {
+				w.set(cx - 1, f + k, cz, P(leg));
+				w.set(cx + 1, f + k, cz, P(leg));
+			}
+			for (int k = 2; k < 4; k++) {
+				for (int dx = -1; dx <= 1; dx++)
+					w.set(cx + dx, f + k, cz, P(k == 3 && dx == 0 ? "minecraft:chiseled_quartz_block" : "minecraft:quartz_block"));
+				w.set(cx - 2, f + k, cz, P(leg)); // arms
+				w.set(cx + 2, f + k, cz, P(leg));
+			}
+			w.set(cx, f + 4, cz, P("minecraft:calcite")); // head
+		} else {
+			w.set(cx, f, cz, P(leg));
+			w.set(cx, f + 1, cz, P("minecraft:quartz_block"));
+			w.set(cx, f + 2, cz, P("minecraft:calcite"));
+		}
+	}
+
+	/* ----------------------------------------------------------- fight pit */
+
+	/**
+	 * A small wooden coliseum laid out from the game's own fight pit tiles: sand arena, a log rim around it, stands of
+	 * spruce stairs rising away from the arena, an outer wall with towers, and open gateways where the stairs are.
+	 */
+	private void fightPit(WorldWriter w, SyxMap.Furniture f, SyxMap.Blueprint bp) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
+		// 0 outside, 1 arena, 2 rim, 3 seat, 4 wall, 5 tower, 6 stairs (gateway)
+		byte[] cat = new byte[W * Dp];
+		for (int ty = 0; ty < f.h(); ty++)
+			for (int tx = 0; tx < f.w(); tx++) {
+				int i = m.idx(f.x() + tx, f.y() + ty);
+				if (!m.inBounds(f.x() + tx, f.y() + ty) || m.roomId(i) != f.room())
+					continue;
+				byte c = 1;
+				if (p.hasFurniture(i)) {
+					SyxMap.FurnTile ft = bp.tiles.get(m.furnTile[i] & 0xFF);
+					String sp = ft == null || ft.spriteKey() == null ? "" : ft.spriteKey().toUpperCase();
+					c = sp.startsWith("RIM") ? 2 : sp.startsWith("SEAT") ? 3 : sp.startsWith("WALL") ? 4
+							: sp.startsWith("TOWER") ? 5 : sp.startsWith("STAIRS") ? 6 : (byte) 1;
+				}
+				for (int v = 0; v < s; v++)
+					for (int u = 0; u < s; u++)
+						cat[tx * s + u + (ty * s + v) * W] = c;
+			}
+		// block distance from the arena, through the room
+		int[] dist = new int[W * Dp];
+		java.util.Arrays.fill(dist, Integer.MAX_VALUE);
+		java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+		for (int j = 0; j < cat.length; j++)
+			if (cat[j] == 1) {
+				dist[j] = 0;
+				q.add(j);
+			}
+		while (!q.isEmpty()) {
+			int j = q.poll(), jx = j % W, jz = j / W;
+			for (int dz = -1; dz <= 1; dz++)
+				for (int dx = -1; dx <= 1; dx++) {
+					int nx = jx + dx, nz = jz + dz;
+					if (nx < 0 || nz < 0 || nx >= W || nz >= Dp)
+						continue;
+					int n = nx + nz * W;
+					if (cat[n] != 0 && dist[n] > dist[j] + 1) {
+						dist[n] = dist[j] + 1;
+						q.add(n);
+					}
+				}
+		}
+		int maxSeat = 2;
+		for (int j = 0; j < cat.length; j++)
+			if (cat[j] == 3 && dist[j] != Integer.MAX_VALUE)
+				maxSeat = Math.max(maxSeat, Math.min(dist[j] + 1, 10));
+		int wallTop = B + maxSeat + 1;
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int j = dx + dz * W, x = x0 + dx, z = z0 + dz;
+				int d = dist[j] == Integer.MAX_VALUE ? maxSeat : dist[j];
+				switch (cat[j]) {
+				case 2 -> { // rim: a low log wall with a rail
+					w.set(x, B + 1, z, P("minecraft:stripped_spruce_log"));
+					w.set(x, B + 2, z, P("minecraft:stripped_spruce_log"));
+					w.set(x, B + 3, z, P("minecraft:spruce_fence"));
+				}
+				case 3 -> { // stands
+					int h = Math.max(2, Math.min(d + 1, 10));
+					for (int y = B + 1; y < B + h; y++)
+						w.set(x, y, z, P("minecraft:spruce_planks"));
+					w.set(x, B + h, z, P("minecraft:spruce_stairs[facing=" + awayFrom(dist, cat, W, Dp, dx, dz) + "]"));
+				}
+				case 4 -> { // outer wall, with log posts
+					boolean post = Math.floorMod(x + z, 4) == 0;
+					for (int y = B + 1; y <= wallTop; y++)
+						w.set(x, y, z, P(post ? "minecraft:spruce_log" : "minecraft:spruce_planks"));
+					w.set(x, wallTop + 1, z, P("minecraft:spruce_fence"));
+				}
+				case 5 -> { // towers
+					for (int y = B + 1; y <= wallTop + 3; y++)
+						w.set(x, y, z, P("minecraft:spruce_log"));
+					w.set(x, wallTop + 4, z, P("minecraft:lantern"));
+				}
+				case 6 -> { // gateway: open at ground level, wall continues overhead
+					for (int y = B + 4; y <= wallTop; y++)
+						w.set(x, y, z, P("minecraft:spruce_planks"));
+				}
+				default -> {
+				}
+				}
+			}
+	}
+
+	/** stair facing for a seat: its back to the higher rows, away from the arena */
+	private static String awayFrom(int[] dist, byte[] cat, int W, int Dp, int dx, int dz) {
+		int best = -1, bestD = Integer.MIN_VALUE;
+		for (int k = 0; k < 4; k++) {
+			int nx = dx + CityPlan.DX[k], nz = dz + CityPlan.DY[k];
+			if (nx < 0 || nz < 0 || nx >= W || nz >= Dp || cat[nx + nz * W] == 0)
+				continue;
+			int d = dist[nx + nz * W];
+			if (d != Integer.MAX_VALUE && d > bestD) {
+				bestD = d;
+				best = k;
+			}
+		}
+		return CityPlan.DIR[best < 0 ? 0 : best];
+	}
+
+	/* ------------------------------------------------------------ stockade */
+
+	/** the gate in the palisade (the room's entrance item), and the prisoners' camp scattered over the yard */
+	private void stockade(WorldWriter w, SyxMap.Furniture f) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
+		boolean wallAlongZ = f.w() < f.h();
+		int top = B + H + 1;
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int x = x0 + dx, z = z0 + dz;
+				w.set(x, B + 1, z, P("minecraft:spruce_fence_gate[facing=" + (wallAlongZ ? "east" : "south") + "]"));
+				for (int y = B + 2; y < top - 1; y++)
+					w.set(x, y, z, P("minecraft:air"));
+				w.set(x, top - 1, z, P("minecraft:spruce_log[axis=" + (wallAlongZ ? "z" : "x") + "]"));
+				w.set(x, top, z, P("minecraft:spruce_fence"));
+			}
+		SyxMap.Room r = f.room() > 0 && f.room() <= m.rooms.size() ? m.rooms.get(f.room() - 1) : null;
+		if (r == null || r.x2() <= r.x1())
+			return;
+		String[] stuff = { "minecraft:barrel[facing=up]", "minecraft:hay_block", "minecraft:cauldron", "minecraft:crafting_table",
+				"minecraft:campfire[lit=true]", "minecraft:composter", "minecraft:chest[facing=south]" };
+		int bx0 = p.blockX(r.x1()), bz0 = p.blockZ(r.y1()), bx1 = p.blockX(r.x2()) - 1, bz1 = p.blockZ(r.y2()) - 1;
+		for (int z = bz0 + 2; z <= bz1 - 2; z += 4)
+			for (int x = bx0 + 2; x <= bx1 - 2; x += 4) {
+				long h = CityPlan.hash(x * 7 + 1, z * 3 + 5);
+				int px = x + (int) (h % 2), pz = z + (int) ((h >> 4) % 2);
+				if (!inRoom(px, pz, f.room()) || !inRoom(px + 1, pz + 1, f.room()) || !inRoom(px - 1, pz - 1, f.room())
+						|| !w.get(px, B + 1, pz).isAir())
+					continue;
+				int kind = (int) ((h >> 8) % 10);
+				if (kind < 3) { // a bed, head and foot
+					boolean nsBed = ((h >> 12) & 1) == 0;
+					int fx = px + (nsBed ? 0 : 1), fz = pz + (nsBed ? 1 : 0);
+					if (!w.get(fx, B + 1, fz).isAir() || !inRoom(fx, fz, f.room()))
+						continue;
+					String facing = nsBed ? "north" : "west";
+					w.set(px, B + 1, pz, P("minecraft:brown_bed[part=head,facing=" + facing + "]"), WorldWriter.FLAGS_RAW);
+					w.set(fx, B + 1, fz, P("minecraft:brown_bed[part=foot,facing=" + facing + "]"), WorldWriter.FLAGS_RAW);
+				} else if (kind < 5) { // a table
+					w.set(px, B + 1, pz, P("minecraft:spruce_fence"));
+					w.set(px, B + 2, pz, P("minecraft:spruce_pressure_plate"));
+				} else
+					w.set(px, B + 1, pz, P(stuff[(int) ((h >> 16) % stuff.length)]));
+			}
+	}
+
+	private boolean inRoom(int x, int z, int room) {
+		int tx = p.tileOfBlockX(x - p.X0), ty = p.tileOfBlockZ(z - p.Z0);
+		return p.inRegion(tx, ty) && m.roomId(m.idx(tx, ty)) == room;
+	}
+
+	/* ---------------------------------------------------------------- pump */
+
+	/**
+	 * Water pump, after its sprite: stone floor, a rimmed basin in the middle, the pump housings before and after
+	 * it, rows of barrels along both long sides, and an outlet channel at the end.
+	 */
+	private void pump(WorldWriter w, SyxMap.Furniture f) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), bw = f.w() * s, bh = f.h() * s;
+		boolean alongZ = bh >= bw;
+		int A = alongZ ? bw : bh, L = alongZ ? bh : bw;
+		int b1 = (int) Math.round(L * 0.3), b2 = (int) Math.round(L * 0.62), mid = A / 2;
+		for (int b = 0; b < L; b++)
+			for (int a = 0; a < A; a++) {
+				int x = alongZ ? x0 + a : x0 + b, z = alongZ ? z0 + b : z0 + a;
+				w.set(x, B, z, P("minecraft:polished_andesite"));
+				boolean side = a == 0 || a == A - 1;
+				boolean basin = !side && b >= b1 && b <= b2;
+				boolean rim = basin && (a == 1 || a == A - 2 || b == b1 || b == b2);
+				boolean outlet = a == mid && b > b2;
+				if (side) {
+					if (b > 0 && b < L - 1 && (b & 1) == 1)
+						w.set(x, B + 1, z, P("minecraft:barrel[facing=up]"));
+				} else if (rim) {
+					w.set(x, B + 1, z, P("minecraft:smooth_stone_slab[type=bottom]"));
+				} else if (basin || outlet) {
+					w.set(x, B, z, P("minecraft:water"));
+					if (basin) {
+						w.set(x, B - 1, z, P("minecraft:water"));
+						w.set(x, B - 2, z, P("minecraft:mud"));
+					} else
+						w.set(x, B - 1, z, P("minecraft:stone_bricks"));
+				} else if (a >= 2 && a <= A - 3 && ((b >= 1 && b <= b1 - 2) || (b >= b2 + 2 && b <= L - 3))) {
+					// pump housings
+					w.set(x, B + 1, z, P("minecraft:polished_granite"));
+					boolean centre = a == mid && (b == (1 + b1 - 2) / 2 || b == (b2 + 2 + L - 3) / 2);
+					w.set(x, B + 2, z, P(centre ? "minecraft:piston[facing=up]" : "minecraft:granite_slab[type=bottom]"));
+				}
+			}
 	}
 
 	/** god colour schemes chosen by the user */
@@ -527,11 +803,11 @@ final class Details {
 				int x = x0 + dx, z = z0 + dz;
 				boolean centre = x >= cx0 && x <= cx1 && z >= cz0 && z <= cz1;
 				if (centre) {
-					w.set(x, B + 1, z, P("minecraft:stone_bricks"));
-					w.set(x, B + 2, z, P("minecraft:chiseled_stone_bricks"));
+					w.set(x, B + 1, z, P("minecraft:polished_andesite"));
+					w.set(x, B + 2, z, P("minecraft:chiseled_quartz_block"));
 					w.set(x, B + 3, z, P("minecraft:campfire[lit=true]"));
 				} else
-					w.set(x, B + 1, z, P("minecraft:stone_brick_slab[type=bottom]"));
+					w.set(x, B + 1, z, P("minecraft:smooth_quartz_slab[type=bottom]"));
 			}
 	}
 
