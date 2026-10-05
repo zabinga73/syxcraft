@@ -584,7 +584,7 @@ public final class CityPlan {
 			if (terrain) {
 				int mh = Math.min(48, 3 + dist[i] * (s + 1) + (int) (h & 1));
 				for (int y = B; y <= B + mh; y++)
-					put(col, y, ore(i, h, y) ? oreBlock(map.mineralKey(i)) : pal.get("mountain"));
+					put(col, y, ore(i, h, y) ? oreBlock(map.mineralKey(i), hash(X + y * 7, Z)) : pal.get("mountain"));
 				put(col, B + mh, pal.get("mountainTop"));
 				if (k == CAVE)
 					for (int y = B + 1; y <= B + H; y++)
@@ -708,7 +708,7 @@ public final class CityPlan {
 			if (lining != null) {
 				int D = st.quarryDepth;
 				for (int y = B - D; y <= B - 1; y++)
-					put(col, y, ((hash(X, y * 31 + Z) & 3) == 0) ? oreBlock(lining) : pal.get(y > B - 3 ? "ground.subsoil" : "ground.deep"));
+					put(col, y, ((hash(X, y * 31 + Z) & 3) == 0) ? oreBlock(lining, hash(X + y, Z)) : pal.get(y > B - 3 ? "ground.subsoil" : "ground.deep"));
 			}
 		}
 
@@ -751,10 +751,11 @@ public final class CityPlan {
 			return B + 1;
 		}
 		if (key.startsWith("POOL_") && roomEdge(bx, bz)) {
-			// a little wooden rim and fence, so a pond by a lake doesn't read as part of the lake
-			put(col, B, Palette.parse("minecraft:spruce_planks"));
+			// a stone rim with a low wall, so a pond by a lake doesn't read as part of the lake: quartz round the
+			// stone pools, polished andesite round ponds (there's no polished andesite fence, the andesite wall is closest)
+			put(col, B, Palette.parse(key.startsWith("POOL_STONE") ? "minecraft:smooth_quartz" : "minecraft:polished_andesite"));
 			put(col, B - 1, pal.get("ground.subsoil"));
-			put(col, B + 1, Palette.parse("minecraft:spruce_fence"));
+			put(col, B + 1, Palette.parse("minecraft:andesite_wall"));
 			return B + 1;
 		}
 		if (key.startsWith("POOL_") || key.startsWith("_WATERCANAL") || key.startsWith("_WATERDRAIN")) {
@@ -1148,7 +1149,10 @@ public final class CityPlan {
 		return map.mineral[i] != 0 && ((h >> (y & 15)) & 3) == 0;
 	}
 
-	BlockState oreBlock(String mineral) {
+	/** the ore for a mineral; h picks between it and its ".alt" ore where the palette has one (gems: diamond, redstone) */
+	BlockState oreBlock(String mineral, long h) {
+		if ((h & 1) == 1 && pal.has("ore." + mineral + ".alt"))
+			return pal.get("ore." + mineral + ".alt");
 		return pal.get("ore." + mineral, "ore.default");
 	}
 
@@ -1232,14 +1236,16 @@ public final class CityPlan {
 	 */
 	int blendColumn(WorldWriter w, int X, int Z, int ring, int width) {
 		final int B = groundY(X - X0, Z - Z0); // the nearest edge column of the city, after topography
-		int nat = w.groundTop(X, Z);
+		int top = w.groundTop(X, Z), nat = w.solidGround(X, Z);
+		// water at about city level is a sea, river or lake: leave it alone. Water higher up (a mountain pool, spring
+		// or fall) is cut down with the land under it.
+		if (top > nat && !w.get(X, top, Z).getFluidState().isEmpty() && top <= Math.max(B, w.level.getSeaLevel()) + 1)
+			return Integer.MAX_VALUE;
 		BlockState natTopState = w.get(X, nat, Z);
-		if (!natTopState.getFluidState().isEmpty())
-			return Integer.MAX_VALUE; // leave seas and rivers alone
 		double t = ring / (double) (width + 1);
 		int target = (int) Math.round(B + (nat - B) * t);
 		if (target == nat)
-			return nat;
+			return Integer.MAX_VALUE; // unchanged: nothing to sweep either
 		BlockState surface = natTopState.is(Blocks.GRASS_BLOCK) || natTopState.is(Blocks.DIRT) ? Blocks.GRASS_BLOCK.defaultBlockState() : natTopState;
 		if (target < nat) {
 			for (int y = w.anyTop(X, Z); y > target; y--)

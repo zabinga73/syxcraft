@@ -20,7 +20,7 @@ public final class PlacementJob {
 		HEIGHT, COLUMNS, BLEND, SWEEP, DETAILS, DONE, CANCELLED, FAILED
 	}
 
-	static final int BLEND_WIDTH = 16;
+	public static final int BLEND_WIDTH = 16;
 
 	public final CityPlan plan;
 	public final WorldWriter w;

@@ -175,8 +175,26 @@ final class Render {
 			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++)
 				if (j.w.anyTop(x, z) > j.plan.B + 96)
 					floating++;
-		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d highLavaColumns=%d spikes=%d",
-				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater, highLava, spikes);
+		// land jutting out of the blend ring: a ring column standing 6+ above both its neighbours along the ring (a fin
+		// the blending skipped)
+		int jut = 0, Wd = dev.sos2mc.syxcraft.place.PlacementJob.BLEND_WIDTH;
+		int bx0 = j.plan.X0 - Wd, bz0 = j.plan.Z0 - Wd, bx1 = j.plan.X0 + j.plan.bw - 1 + Wd, bz1 = j.plan.Z0 + j.plan.bh - 1 + Wd;
+		for (int z = bz0 + 1; z < bz1; z++)
+			for (int x = bx0 + 1; x < bx1; x++) {
+				int bx = x - j.plan.X0, bz = z - j.plan.Z0;
+				if (bx >= 0 && bz >= 0 && bx < j.plan.bw && bz < j.plan.bh)
+					continue;
+				boolean westEast = bx < 0 || bx >= j.plan.bw; // ring runs along z on the west/east sides
+				int t = j.w.solidGround(x, z);
+				int a = westEast ? j.w.solidGround(x, z - 1) : j.w.solidGround(x - 1, z);
+				int b = westEast ? j.w.solidGround(x, z + 1) : j.w.solidGround(x + 1, z);
+				if (t > Math.max(a, b) + 5 && jut++ < 5)
+					dev.sos2mc.syxcraft.Syxcraft.LOG.info("jut at {} {} {} (neighbours {} {})", x, t, z, a, b);
+			}
+		int paintings = level.getEntitiesOfClass(net.minecraft.world.entity.decoration.painting.Painting.class,
+				new net.minecraft.world.phys.AABB(j.plan.X0, j.plan.B - 64, j.plan.Z0, j.plan.X0 + j.plan.bw, j.plan.B + 64, j.plan.Z0 + j.plan.bh)).size();
+		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d highLavaColumns=%d spikes=%d blendJuts=%d paintings=%d",
+				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater, highLava, spikes, jut, paintings);
 	}
 
 	private static int clamp(int v) {

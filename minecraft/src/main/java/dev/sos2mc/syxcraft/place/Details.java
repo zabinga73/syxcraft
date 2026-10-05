@@ -4,6 +4,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import dev.sos2mc.syxcraft.map.SyxMap;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.tags.PaintingVariantTags;
+import net.minecraft.world.entity.decoration.painting.Painting;
+import net.minecraft.world.entity.decoration.painting.PaintingVariant;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -30,6 +37,11 @@ final class Details {
 		// cushions are entities, so a re-placed city would otherwise keep the old ones floating about
 		jobs.add(() -> Seats.removeCushions(w.level, new net.minecraft.world.phys.AABB(p.X0, B - CityPlan.BELOW, p.Z0,
 				p.X0 + p.bw, B + CityPlan.ABOVE, p.Z0 + p.bh)));
+		jobs.add(() -> {
+			for (Painting e : w.level.getEntitiesOfClass(Painting.class, new net.minecraft.world.phys.AABB(p.X0, B - CityPlan.BELOW,
+					p.Z0, p.X0 + p.bw, B + CityPlan.ABOVE, p.Z0 + p.bh), e -> e.entityTags().contains(PAINTING_TAG)))
+				e.discard();
+		});
 		boolean veg = p.st.has(PlaceSettings.VEGETATION), furn = p.st.has(PlaceSettings.FURNITURE)
 				&& p.st.has(PlaceSettings.BUILDINGS);
 		for (int ty = p.ty0; ty <= p.ty1; ty++) {
@@ -50,6 +62,11 @@ final class Details {
 			for (SyxMap.Furniture f : m.furniture)
 				if (p.inRegion(f.x(), f.y()))
 					jobs.add(() -> furnitureItem(w, f));
+		// paintings go up last, once the furniture they mustn't overlap is in
+		if (furn)
+			for (SyxMap.Room r : m.rooms)
+				if (r.blueprint() != null && r.blueprint().startsWith("_HOME_CHAMBER") && p.inRegion(r.x1(), r.y1()))
+					jobs.add(() -> paintings(w, r));
 		return jobs;
 	}
 
@@ -161,7 +178,9 @@ final class Details {
 		// the lavatory's "Basins" use table sprites in Songs of Syx: make them washbasins
 		if (room.startsWith("LAVATORY") && has(sp, "TABLE", "BASIN"))
 			return single("minecraft:water_cauldron[level=3]");
-		if ((room.startsWith("_HOSPITAL") || room.startsWith("PHYSICIAN") || room.startsWith("RESTHOME")) && has(sp, "BED"))
+		if (room.startsWith("PHYSICIAN") && has(sp, "BED"))
+			return bed("pink", "white");
+		if ((room.startsWith("_HOSPITAL") || room.startsWith("RESTHOME")) && has(sp, "BED"))
 			return bed("white");
 		if (room.startsWith("MINE_") || room.startsWith("_STOCKPILE") || room.startsWith("_HAULER"))
 			return barrels();
@@ -338,7 +357,7 @@ final class Details {
 
 	/**
 	 * the Averii: a horned, winged demon of blackstone on a dark pedestal, wings spread behind it. rot = the game's
-	 * quarter turns; the figure faces south at 0, west at 1, north at 2, east at 3.
+	 * quarter turns; the figure faces north at 0, east at 1, south at 2, west at 3.
 	 */
 	private void averii(WorldWriter w, int x0, int z0, int W, int Dp, int rot) {
 		boolean sideways = (rot & 1) == 1;
@@ -357,7 +376,7 @@ final class Details {
 		int fw = big ? (across % 2 == 0 ? 2 : 1) : 1;
 		int fa0 = a0 + (across - fw) / 2;
 		int fd = d0 + (deep - 1) / 2; // the figure is one block deep; its wings stand one block behind it
-		int back = (rot == 0 || rot == 3) ? -1 : 1; // facing +z/+x puts the back towards -z/-x
+		int back = (rot == 0 || rot == 3) ? 1 : -1; // facing -z/-x puts the back towards +z/+x
 		int wd = fd + back;
 		if (wd < d0 || wd >= d0 + deep)
 			wd = fd; // no room behind: wings in the figure's own plane
@@ -461,7 +480,8 @@ final class Details {
 		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
 		boolean wide = W >= 4 && W % 2 == 0;
 		int tw = wide ? 2 : 1, tx0 = x0 + (W - tw) / 2, tz0 = z0 + (Dp - tw) / 2;
-		double cx = x0 + (W - 1) / 2.0, cz = z0 + (Dp - 1) / 2.0;
+		// the canopy is centred on the trunk, so it covers it evenly
+		double cx = tx0 + (tw - 1) / 2.0, cz = tz0 + (tw - 1) / 2.0;
 		int trunk = 4 + W, maxR = Math.max(1, W / 2);
 		BlockState log = P("minecraft:spruce_log"), leaves = P("minecraft:spruce_leaves[persistent=true]");
 		for (int y = B + 1; y <= B + trunk; y++)
@@ -469,17 +489,20 @@ final class Details {
 				for (int b = 0; b < tw; b++)
 					w.set(tx0 + a, y, tz0 + b, log);
 		int top = B + trunk + 1;
+		int gx0 = (int) Math.floor(cx) - maxR - 2, gz0 = (int) Math.floor(cz) - maxR - 2;
 		for (int j = 0; j <= trunk - 2; j++) { // layers down from the tip, widening in steps
-			double r = Math.min(maxR, (j + 1) / 2) + (wide ? 0.5 : 0) + (j % 2 == 1 ? 0.3 : 0);
+			// a 2x2 trunk needs 0.75 to cover its corners (0.71 from the middle)
+			double r = Math.min(maxR, (j + 1) / 2) + (wide ? 0.75 : 0) + (j % 2 == 1 ? 0.3 : 0);
 			int y = top - j;
-			for (int dz = -maxR - 1; dz <= maxR + 1; dz++)
-				for (int dx = -maxR - 1; dx <= maxR + 1; dx++) {
-					int x = (int) Math.round(cx + dx), z = (int) Math.round(cz + dz);
+			for (int z = gz0; z <= gz0 + 2 * maxR + 5; z++)
+				for (int x = gx0; x <= gx0 + 2 * maxR + 5; x++)
 					if (Math.hypot(x - cx, z - cz) <= r + 0.2)
 						w.setIfAir(x, y, z, leaves);
-				}
 		}
-		w.setIfAir((int) Math.round(cx), top + 1, (int) Math.round(cz), leaves);
+		// the tip over the whole trunk
+		for (int a = 0; a < tw; a++)
+			for (int b = 0; b < tw; b++)
+				w.setIfAir(tx0 + a, top + 1, tz0 + b, leaves);
 	}
 
 	/* ------------------------------------------------------------ chambers */
@@ -554,6 +577,68 @@ final class Details {
 				}
 				}
 			}
+	}
+
+	static final String PAINTING_TAG = "syxcraft_painting";
+	private static final Direction[] FACING = { Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST };
+
+	/**
+	 * paintings along a chamber's walls: about every other wall tile, at eye level, never over a window or door and
+	 * never overlapping furniture (the game's own painting rules check the wall and the space in front)
+	 */
+	private void paintings(WorldWriter w, SyxMap.Room r) {
+		List<Holder<PaintingVariant>> all = new ArrayList<>();
+		w.level.registryAccess().lookupOrThrow(Registries.PAINTING_VARIANT).getTagOrEmpty(PaintingVariantTags.PLACEABLE)
+				.forEach(all::add);
+		if (all.isEmpty())
+			return;
+		int maxH = Math.max(1, Math.min(3, H - 1)), maxW = s + 2, hung = 0;
+		for (int ty = r.y1(); ty <= r.y2(); ty++)
+			for (int tx = r.x1(); tx <= r.x2(); tx++) {
+				if (!m.inBounds(tx, ty) || m.roomId(m.idx(tx, ty)) != r.id())
+					continue;
+				for (int dir = 0; dir < 4; dir++) {
+					int ntx = tx + CityPlan.DX[dir], nty = ty + CityPlan.DY[dir];
+					if (!m.inBounds(ntx, nty) || p.kind[m.idx(ntx, nty)] != CityPlan.WALL)
+						continue;
+					long h = CityPlan.hash(tx * 7 + dir, ty * 11 + 3);
+					if ((h & 1) != 0)
+						continue;
+					// the block in front of the middle of this tile's wall side, facing into the room
+					int x = p.blockX(tx) + (dir == 1 ? s - 1 : dir == 3 ? 0 : s / 2);
+					int z = p.blockZ(ty) + (dir == 2 ? s - 1 : dir == 0 ? 0 : s / 2);
+					Direction facing = FACING[(dir + 2) % 4];
+					BlockPos pos = new BlockPos(x, B + 2, z);
+					List<Holder<PaintingVariant>> vs = new ArrayList<>(all);
+					java.util.Collections.shuffle(vs, new java.util.Random(h));
+					for (Holder<PaintingVariant> v : vs) {
+						if (v.value().height() > maxH || v.value().width() > maxW)
+							continue;
+						Painting pt = new Painting(w.level, pos, facing, v);
+						if (!pt.survives() || overWindow(w, pt, facing))
+							continue;
+						pt.addTag(PAINTING_TAG);
+						w.level.addFreshEntity(pt);
+						hung++;
+						break;
+					}
+				}
+			}
+		dev.sos2mc.syxcraft.Syxcraft.LOG.info("{} paintings in chamber {}", hung, r.id());
+	}
+
+	/** true if any block behind the painting is glass, a pane, bars or a door (or not there at all) */
+	private static boolean overWindow(WorldWriter w, Painting pt, Direction facing) {
+		var box = pt.getBoundingBox().deflate(0.1);
+		for (BlockPos b : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ),
+				BlockPos.containing(box.maxX, box.maxY, box.maxZ))) {
+			BlockState st = w.level.getBlockState(b.relative(facing.getOpposite()));
+			if (st.isAir() || st.getBlock() instanceof net.minecraft.world.level.block.IronBarsBlock
+					|| st.getBlock() instanceof net.minecraft.world.level.block.TransparentBlock
+					|| st.getBlock() instanceof net.minecraft.world.level.block.DoorBlock || st.is(net.minecraft.tags.BlockTags.TRAPDOORS))
+				return true;
+		}
+		return false;
 	}
 
 	/** direction from a bed-head tile to the bed body (tiles 1/2), -1 if none */
@@ -1359,12 +1444,14 @@ final class Details {
 		};
 	}
 
-	private Piece bed(String colour) {
+	/** a bed per tile; with several colours each bed picks one (both halves of a bed share it) */
+	private Piece bed(String... colours) {
 		return (w, x, y, z, u, v, d, h) -> {
+			String colour = colours[(int) (CityPlan.hash(x, z - v) % colours.length)];
 			if (s >= 2) {
 				if (u != 0)
 					return;
-				w.set(x, y, z + (v == 0 ? 0 : 0), P("minecraft:" + colour + "_bed[part=" + (v == 0 ? "head" : "foot") + ",facing=north]"), WorldWriter.FLAGS_RAW);
+				w.set(x, y, z, P("minecraft:" + colour + "_bed[part=" + (v == 0 ? "head" : "foot") + ",facing=north]"), WorldWriter.FLAGS_RAW);
 			} else {
 				w.set(x, y, z, P("minecraft:" + colour + "_carpet"));
 			}

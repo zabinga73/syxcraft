@@ -129,9 +129,10 @@ public final class Palette {
 		d("ore.CLAY", "minecraft:clay");
 		d("ore.COAL", "minecraft:coal_ore");
 		d("ore.ORE", "minecraft:iron_ore");
-		d("ore.GEM", "minecraft:emerald_ore");
+		d("ore.GEM", "minecraft:diamond_ore");
+		d("ore.GEM.alt", "minecraft:redstone_ore"); // an ".alt" key mixes in a second ore for about half the blocks
 		d("ore.STONE", "minecraft:stone");
-		d("ore.SITHILON", "minecraft:amethyst_block");
+		d("ore.SITHILON", "minecraft:emerald_ore");
 		d("ore.default", "minecraft:stone");
 	}
 
@@ -153,7 +154,9 @@ public final class Palette {
 			Map.entry("floor.DARK3", "minecraft:deepslate_bricks"), // < 1.2.0
 			Map.entry("floor.DECOR1", "minecraft:terracotta"), // < 1.2.0
 			Map.entry("floor.DECOR2", "minecraft:white_terracotta"), // < 1.2.0
-			Map.entry("floor.DECOR3", "minecraft:light_gray_terracotta")); // < 1.2.0
+			Map.entry("floor.DECOR3", "minecraft:light_gray_terracotta"), // < 1.2.0
+			Map.entry("ore.GEM", "minecraft:emerald_ore"), // < 1.6.2
+			Map.entry("ore.SITHILON", "minecraft:amethyst_block")); // < 1.6.2
 
 	private static void structure(String k, String wall, String base, String pillar, String roofStairs, String roofBlock,
 			String door, String window, String ceiling) {

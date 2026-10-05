@@ -2,6 +2,23 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.2
+Syxcraft:
+- Fix: mountains at the edge of the city are smoothed even where water sits on them (a pool, spring or waterfall
+  up the slope). The blending skipped every column topped with water, leaving fins of land jutting out. It now
+  ramps the solid ground under water, trees and plants, and only leaves seas, rivers and lakes near city level alone.
+- Averii Sculpture faces the other way round.
+- Mines: gem mines are lined with diamond and redstone ore (was emerald), Sithilon with emerald ore (was amethyst).
+  A palette key with `.alt` (`ore.GEM.alt`) mixes a second ore into about half the blocks.
+- Chambers: paintings on the walls at eye level, never over windows or doors and never overlapping furniture.
+- Pools: a smooth quartz rim round stone pools and polished andesite round ponds, with an andesite wall (was a
+  spruce rim and fence).
+- Physicians: beds are pink or white.
+- Graveyard trees: the leaves cover the top of the trunk (the 2x2 trunks of bigger trees poked out) and sit centred
+  on it.
+- `/syx place ... at <x> <z> <topography>+<height>` (e.g. `local+sea`) sets the ground height mode too.
+  `/syx check` reports `blendJuts`.
+
 ## 1.6.1
 Syxcraft:
 - Death monument: each of its three items gets its own design (was a wither skull on blackstone on every tile).

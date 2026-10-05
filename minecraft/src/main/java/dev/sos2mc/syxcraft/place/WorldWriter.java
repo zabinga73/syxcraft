@@ -80,6 +80,18 @@ public final class WorldWriter {
 		return y;
 	}
 
+	/** y of the topmost solid block: looks through all water and lava, trees, plants and snow */
+	public int solidGround(int x, int z) {
+		int y = groundTop(x, z);
+		while (y > minY()) {
+			BlockState s = get(x, y, z);
+			if (!(s.isAir() || !s.getFluidState().isEmpty() || s.canBeReplaced() || growth(s)))
+				break;
+			y--;
+		}
+		return y;
+	}
+
 	private static final java.util.Set<Block> GROWTH = java.util.Set.of(Blocks.BAMBOO, Blocks.BAMBOO_SAPLING, Blocks.SUGAR_CANE,
 			Blocks.CACTUS, Blocks.CACTUS_FLOWER, Blocks.BROWN_MUSHROOM_BLOCK, Blocks.RED_MUSHROOM_BLOCK, Blocks.MUSHROOM_STEM,
 			Blocks.BEE_NEST, Blocks.COCOA, Blocks.BIG_DRIPLEAF, Blocks.BIG_DRIPLEAF_STEM, Blocks.POINTED_DRIPSTONE,
