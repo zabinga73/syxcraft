@@ -110,7 +110,7 @@ final class Details {
 				|| room.startsWith("_WATER") || room.startsWith("_CONSTRUCTION") || room.startsWith("MONUMENT_NATURE")
 				|| room.startsWith("MONUMENT_TORCH") || room.startsWith("_BENCH") || room.startsWith("MONUMENT_SCULPTURE")
 				|| room.startsWith("FIGHTPIT_") || room.startsWith("_STOCKADE") || room.startsWith("_WATERPUMP")
-				|| room.startsWith("STAGE_") || room.startsWith("_EXECUTION"))
+				|| room.startsWith("STAGE_") || room.startsWith("_EXECUTION") || room.startsWith("MONUMENT_DEATH"))
 			return;
 		long h = CityPlan.hash(tx * 31 + 7, ty * 17 + 11);
 		int x0 = p.blockX(tx), z0 = p.blockZ(ty);
@@ -259,6 +259,151 @@ final class Details {
 			graveTree(w, f);
 		else if (room.startsWith("_EXECUTION"))
 			execution(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
+		else if (room.startsWith("MONUMENT_DEATH"))
+			deathMonument(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
+	}
+
+	/* ------------------------------------------------------ death monuments */
+
+	/** the death monument's three items: a mound of skulls, a head on a spike, the winged Averii sculpture */
+	private void deathMonument(WorldWriter w, SyxMap.Furniture f, String group) {
+		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), W = f.w() * s, Dp = f.h() * s;
+		if (group.contains("SKULL") || group.contains("MOUND"))
+			skullMound(w, x0, z0, W, Dp);
+		else if (group.contains("SPIKE") || group.contains("HEAD"))
+			headOnSpike(w, x0, z0, W, Dp);
+		else
+			averii(w, x0, z0, W, Dp, f.rot());
+	}
+
+	/**
+	 * a heap of skeleton skulls: a dome of bone blocks covered in skulls, with skulls stuck to the sides of each step
+	 * and a ring of loose ones round the foot
+	 */
+	private void skullMound(WorldWriter w, int x0, int z0, int W, int Dp) {
+		double cx = (W - 1) / 2.0, cz = (Dp - 1) / 2.0, r = Math.max(W, Dp) / 2.0;
+		int peak = Math.max(1, (int) Math.round(Math.min(W, Dp) * 0.55)); // core blocks at the centre
+		int[] top = new int[W * Dp]; // core height per column, 0 = none
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				double d = Math.hypot((dx - cx) / Math.max(0.5, cx + 0.5), (dz - cz) / Math.max(0.5, cz + 0.5));
+				top[dx + dz * W] = d >= 1 ? 0 : (int) Math.round(peak * Math.sqrt(1 - d * d) + 0.25);
+			}
+		int y = B + 1;
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int x = x0 + dx, z = z0 + dz, t = top[dx + dz * W];
+				long h = CityPlan.hash(x * 5 + 1, z * 3 + 2);
+				w.set(x, B, z, P((h & 3) == 0 ? "minecraft:soul_soil" : "minecraft:coarse_dirt"));
+				for (int k = 0; k < t; k++)
+					w.set(x, y + k, z, P(((h >> k) & 7) == 0 ? "minecraft:dripstone_block" : "minecraft:bone_block"));
+				// a skull on top of every column, the bare edges get one too unless the hash leaves a gap
+				if (t > 0 || (h & 3) != 0)
+					w.set(x, y + t, z, skull(h >> 8));
+				// skulls on the sides of the steps, facing out
+				for (int dir = 0; dir < 4; dir++) {
+					int nx = dx + CityPlan.DX[dir], nz = dz + CityPlan.DY[dir];
+					int nt = nx >= 0 && nz >= 0 && nx < W && nz < Dp ? top[nx + nz * W] : -1;
+					for (int k = Math.max(0, nt + 1); k < t; k++)
+						if (((h >> (dir * 3 + k)) & 3) != 0)
+							w.setIfAir(x + CityPlan.DX[dir], y + k, z + CityPlan.DY[dir],
+									P("minecraft:skeleton_wall_skull[facing=" + CityPlan.DIR[dir] + "]"));
+				}
+			}
+		if (r >= 2) // the odd candle stuck in the heap
+			w.setIfAir(x0 + W / 2, y + top[W / 2 + (Dp / 2) * W] + 1, z0 + Dp / 2, P("minecraft:candle[lit=true,candles=1]"));
+	}
+
+	private static BlockState skull(long h) {
+		return P("minecraft:skeleton_skull[rotation=" + Math.floorMod(h, 16) + "]");
+	}
+
+	/** a sharpened stake with a severed head on it, in a patch of trampled dirt */
+	private void headOnSpike(WorldWriter w, int x0, int z0, int W, int Dp) {
+		int x = x0 + (W - 1) / 2, z = z0 + (Dp - 1) / 2;
+		long h = CityPlan.hash(x, z);
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++)
+				w.set(x0 + dx, B, z0 + dz, P(((dx + dz + h) & 1) == 0 ? "minecraft:coarse_dirt" : "minecraft:rooted_dirt"));
+		int pole = 2 + Math.min(2, s - 1); // taller at bigger scales
+		for (int k = 1; k <= pole; k++)
+			w.set(x, B + k, z, P("minecraft:stripped_dark_oak_log"));
+		w.set(x, B + pole + 1, z, P("minecraft:dark_oak_fence")); // the sharpened tip, through the neck
+		w.set(x, B + pole + 2, z, P("minecraft:zombie_head[rotation=" + Math.floorMod(h >> 4, 16) + "]"));
+		// blood run down the stake and pooled at its foot
+		w.setIfAir(x + 1, B + 1, z, P("minecraft:redstone_wire"));
+		if ((h & 1) == 0)
+			w.setIfAir(x, B + 1, z + 1, P("minecraft:redstone_wire"));
+	}
+
+	/**
+	 * the Averii: a horned, winged demon of blackstone on a dark pedestal, wings spread behind it. rot = the game's
+	 * quarter turns; the figure faces south at 0, west at 1, north at 2, east at 3.
+	 */
+	private void averii(WorldWriter w, int x0, int z0, int W, int Dp, int rot) {
+		boolean sideways = (rot & 1) == 1;
+		int y = B + 1;
+		for (int dz = 0; dz < Dp; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int x = x0 + dx, z = z0 + dz;
+				boolean edge = dx == 0 || dz == 0 || dx == W - 1 || dz == Dp - 1;
+				w.set(x, y, z, P(edge && W >= 4 ? "minecraft:polished_blackstone_bricks" : "minecraft:polished_blackstone"));
+				if (W >= 4 && !edge)
+					w.set(x, y + 1, z, P("minecraft:chiseled_polished_blackstone"));
+			}
+		int f = y + (W >= 4 ? 2 : 1); // figure's feet
+		int across = sideways ? Dp : W, deep = sideways ? W : Dp, a0 = sideways ? z0 : x0, d0 = sideways ? x0 : z0;
+		boolean big = Math.min(W, Dp) >= 4;
+		int fw = big ? (across % 2 == 0 ? 2 : 1) : 1;
+		int fa0 = a0 + (across - fw) / 2;
+		int fd = d0 + (deep - 1) / 2; // the figure is one block deep; its wings stand one block behind it
+		int back = (rot == 0 || rot == 3) ? -1 : 1; // facing +z/+x puts the back towards -z/-x
+		int wd = fd + back;
+		if (wd < d0 || wd >= d0 + deep)
+			wd = fd; // no room behind: wings in the figure's own plane
+		int legs = big ? 2 : 1, torso = big ? 3 : 1;
+		for (int j = 0; j < legs; j++)
+			for (int c = 0; c < fw; c++)
+				setAD(w, sideways, fa0 + c, fd, f + j, "minecraft:blackstone");
+		for (int j = 0; j < torso; j++)
+			for (int c = 0; c < fw; c++)
+				setAD(w, sideways, fa0 + c, fd, f + legs + j, "minecraft:polished_blackstone");
+		if (big) // arms hanging, claws at the bottom
+			for (int j = 0; j < torso; j++) {
+				String b = j == 0 ? "minecraft:polished_blackstone_wall" : "minecraft:blackstone";
+				setAD(w, sideways, fa0 - 1, fd, f + legs + j, b);
+				setAD(w, sideways, fa0 + fw, fd, f + legs + j, b);
+			}
+		int head = f + legs + torso;
+		for (int c = 0; c < fw; c++)
+			setAD(w, sideways, fa0 + c, fd, head, "minecraft:chiseled_polished_blackstone"); // a grim face
+		// horns: dripstone points from the head's outer corners (one horn pair on a 1-wide head goes beside it)
+		String horn = "minecraft:pointed_dripstone[vertical_direction=up,thickness=tip]";
+		if (fw == 2) {
+			setAD(w, sideways, fa0, fd, head + 1, horn);
+			setAD(w, sideways, fa0 + 1, fd, head + 1, horn);
+		} else {
+			setAD(w, sideways, fa0, fd, head + 1, horn);
+		}
+		// wings: from the shoulders out and up, a bony leading edge over a dark membrane, tips past the head
+		// the wings taper as they rise, so they read as wings and not a cape; tips stand higher than the horns
+		int span = big ? Math.max(3, (across - fw) / 2 + 2) : 1;
+		int shoulder = f + legs + torso - 1;
+		for (int o = 1; o <= span; o++) {
+			int topY = shoulder + o + (o == span ? 1 : 0);
+			int botY = topY - Math.max(o == span ? 1 : 2, span + 1 - o);
+			if (!big)
+				botY = topY = shoulder + 1;
+			for (int side = -1; side <= 1; side += 2) {
+				int a = side < 0 ? fa0 - o : fa0 + fw - 1 + o;
+				for (int yy = botY; yy <= topY; yy++)
+					setAD(w, sideways, a, wd, yy, yy == topY ? "minecraft:deepslate_tiles" : "minecraft:polished_deepslate");
+			}
+		}
+		// where the wings join the back
+		if (wd != fd)
+			for (int c = 0; c < fw; c++)
+				setAD(w, sideways, fa0 + c, wd, shoulder, "minecraft:polished_deepslate");
 	}
 
 	/* ----------------------------------------------------------- graveyard */
@@ -1291,10 +1436,6 @@ final class Details {
 					w.set(x, y, z, P("minecraft:flowering_azalea"));
 				else
 					w.set(x, y, z, CityPlan.Blocks1.flower((int) (h >> 3)));
-			}
-			case "DEATH" -> {
-				w.set(x, y, z, P("minecraft:polished_blackstone"));
-				w.set(x, y + 1, z, P("minecraft:wither_skeleton_skull"));
 			}
 			case "BLOB" -> {
 				w.set(x, y, z, P("minecraft:slime_block"));

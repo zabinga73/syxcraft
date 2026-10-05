@@ -2,6 +2,16 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.1
+Syxcraft:
+- Death monument: each of its three items gets its own design (was a wither skull on blackstone on every tile).
+  - Mound of Skulls: a heap of bone blocks covered in skeleton skulls, with skulls on the sides of the steps and
+    loose ones round the foot, and a candle on top of the bigger ones.
+  - Averii Sculpture: a horned, winged demon of blackstone on a dark pedestal, wings spread up behind it. It faces the
+    way the game turned it.
+  - Head on Spike: a dark oak stake with a zombie head on it and blood at its foot.
+- `/syx dump <tx> <ty> <tw> <th>` (dev): writes the blocks over a range of tiles to `syxcraft-dump.txt`.
+
 ## 1.6.0
 Syxcraft:
 - Fix: no more water and lava columns standing in the air over the city. Cutting through a mountain let its water and

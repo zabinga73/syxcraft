@@ -207,6 +207,37 @@ public final class SyxServer {
 					c.getSource().sendSystemMessage(Component.literal("Syx check: " + Render.checkDoors(last)));
 					return 1;
 				}))
+				// dev: every non-air block over a range of tiles (plus a 3-block margin) to a text file, "x y z state"
+				.then(Commands.literal("dump").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+						.then(Commands.argument("tx", IntegerArgumentType.integer()).then(Commands.argument("ty", IntegerArgumentType.integer())
+								.then(Commands.argument("tw", IntegerArgumentType.integer(1, 64)).then(Commands.argument("th", IntegerArgumentType.integer(1, 64))
+										.executes(c -> {
+											if (last == null)
+												return 0;
+											var pl = last.plan;
+											int tx = IntegerArgumentType.getInteger(c, "tx"), ty = IntegerArgumentType.getInteger(c, "ty");
+											int x1 = pl.blockX(tx) - 3, z1 = pl.blockZ(ty) - 3;
+											int x2 = pl.blockX(tx + IntegerArgumentType.getInteger(c, "tw")) + 2;
+											int z2 = pl.blockZ(ty + IntegerArgumentType.getInteger(c, "th")) + 2;
+											StringBuilder sb = new StringBuilder();
+											var pos = new net.minecraft.core.BlockPos.MutableBlockPos();
+											for (int y = pl.B - 1; y <= pl.B + 24; y++)
+												for (int z = z1; z <= z2; z++)
+													for (int x = x1; x <= x2; x++) {
+														var st = c.getSource().getLevel().getBlockState(pos.set(x, y, z));
+														if (!st.isAir())
+															sb.append(x - x1).append(' ').append(y - pl.B).append(' ').append(z - z1).append(' ')
+																	.append(st).append('\n');
+													}
+											try {
+												Path out = FabricLoader.getInstance().getGameDir().resolve("syxcraft-dump.txt");
+												java.nio.file.Files.writeString(out, sb);
+												c.getSource().sendSystemMessage(Component.literal("Syx: wrote " + out));
+											} catch (java.io.IOException e) {
+												c.getSource().sendSystemMessage(Component.literal("Syx: dump failed: " + e));
+											}
+											return 1;
+										}))))))
 				.then(Commands.literal("render").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).executes(SyxServer::render)
 						.then(Commands.literal("plan").then(Commands.argument("dy", IntegerArgumentType.integer(-64, 64)).executes(c -> {
 							try {
