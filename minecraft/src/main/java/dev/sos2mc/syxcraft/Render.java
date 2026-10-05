@@ -146,16 +146,28 @@ final class Render {
 						attic++;
 			}
 		// water above city level never belongs there (it shows as standing water pillars)
-		int highWater = 0;
+		int highWater = 0, highLava = 0;
 		for (int z = j.plan.Z0; z < j.plan.Z0 + j.plan.bh; z++)
 			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++) {
 				int top = j.w.anyTop(x, z);
-				for (int yy = j.plan.B + 1; yy <= top; yy++)
-					if (!level.getBlockState(pos.set(x, yy, z)).getFluidState().isEmpty()) {
-						if (highWater++ < 5)
-							dev.sos2mc.syxcraft.Syxcraft.LOG.info("high water at {} {} {}", x, yy, z);
+				for (int yy = j.plan.B + 1; yy <= top; yy++) {
+					var fs = level.getBlockState(pos.set(x, yy, z)).getFluidState();
+					if (!fs.isEmpty()) {
+						boolean lava = fs.is(net.minecraft.tags.FluidTags.LAVA);
+						if ((lava ? highLava++ : highWater++) < 5)
+							dev.sos2mc.syxcraft.Syxcraft.LOG.info("high {} at {} {} {}", lava ? "lava" : "water", x, yy, z);
 						break;
 					}
+				}
+			}
+		// narrow spikes: a column standing 6+ blocks above all four neighbours (stray fluid or soil pillars)
+		int spikes = 0;
+		for (int z = j.plan.Z0 + 1; z < j.plan.Z0 + j.plan.bh - 1; z++)
+			for (int x = j.plan.X0 + 1; x < j.plan.X0 + j.plan.bw - 1; x++) {
+				int t = j.w.anyTop(x, z);
+				int n = Math.max(Math.max(j.w.anyTop(x - 1, z), j.w.anyTop(x + 1, z)), Math.max(j.w.anyTop(x, z - 1), j.w.anyTop(x, z + 1)));
+				if (t >= n + 6 && spikes++ < 5)
+					dev.sos2mc.syxcraft.Syxcraft.LOG.info("spike at {} {}..{} {} ({})", x, n, t, z, level.getBlockState(pos.set(x, t, z)));
 			}
 		// leftover natural terrain high over the city (floating mountain tips): nothing built reaches B + 96
 		int floating = 0;
@@ -163,8 +175,8 @@ final class Render {
 			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++)
 				if (j.w.anyTop(x, z) > j.plan.B + 96)
 					floating++;
-		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d",
-				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater);
+		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d highLavaColumns=%d spikes=%d",
+				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater, highLava, spikes);
 	}
 
 	private static int clamp(int v) {

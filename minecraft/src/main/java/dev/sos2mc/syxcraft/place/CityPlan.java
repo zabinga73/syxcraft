@@ -55,6 +55,8 @@ public final class CityPlan {
 	final int[] openDist;
 	/** per region block: how far topography moved the ground from B (filled in by the column pass) */
 	final int[] lift;
+	/** per region block: the highest y the column pass built (Integer.MIN_VALUE until built) */
+	final int[] builtTop;
 	private final long seed;
 	/** per quarry room: the block column that gets the ladder */
 	final Map<Integer, long[]> ladders = new HashMap<>();
@@ -98,6 +100,8 @@ public final class CityPlan {
 		findQuarries();
 		openDist = openDistances();
 		lift = new int[bw * bh];
+		builtTop = new int[bw * bh];
+		java.util.Arrays.fill(builtTop, Integer.MIN_VALUE);
 		String name = map.save != null ? map.save : map.city != null ? map.city : "";
 		seed = name.hashCode() * 0x9E3779B97F4A7C15L;
 	}
@@ -1180,14 +1184,16 @@ public final class CityPlan {
 	private void write(WorldWriter w, int X, int Z, BlockState[] col, int top, int dh) {
 		final int B = this.B + dh; // the column's own ground level
 		top += dh;
-		int lowest = Integer.MAX_VALUE;
+		int lowest = Integer.MAX_VALUE, highest = top;
 		for (int idx = 0; idx < col.length; idx++) {
 			if (col[idx] == null)
 				continue;
 			int y = idx - BELOW + B;
 			lowest = Math.min(lowest, y);
+			highest = Math.max(highest, y);
 			w.set(X, y, Z, col[idx]);
 		}
+		builtTop[(X - X0) + (Z - Z0) * bw] = highest;
 		// fill holes under the column (water, caves, air over cliffs) down to solid ground
 		if (st.has(PlaceSettings.FILL_BELOW) && lowest != Integer.MAX_VALUE) {
 			BlockState deep = pal.get("ground.deep");
@@ -1210,17 +1216,30 @@ public final class CityPlan {
 		}
 	}
 
-	/** gentle ramp between the flattened city and the natural terrain around it */
-	void blendColumn(WorldWriter w, int X, int Z, int ring, int width) {
+	/**
+	 * Remove water and lava left above a built column: falls that poured in from terrain cut later, which are left
+	 * standing once their source is gone. expectTop = the highest y the column should reach.
+	 */
+	static void sweepFluids(WorldWriter w, int X, int Z, int expectTop) {
+		for (int y = w.anyTop(X, Z); y > expectTop; y--)
+			if (w.get(X, y, Z).getBlock() instanceof net.minecraft.world.level.block.LiquidBlock)
+				w.set(X, y, Z, Blocks.AIR.defaultBlockState());
+	}
+
+	/**
+	 * gentle ramp between the flattened city and the natural terrain around it; returns the column's new ground y,
+	 * or Integer.MAX_VALUE where it was left alone (seas and rivers)
+	 */
+	int blendColumn(WorldWriter w, int X, int Z, int ring, int width) {
 		final int B = groundY(X - X0, Z - Z0); // the nearest edge column of the city, after topography
 		int nat = w.groundTop(X, Z);
 		BlockState natTopState = w.get(X, nat, Z);
 		if (!natTopState.getFluidState().isEmpty())
-			return; // leave seas and rivers alone
+			return Integer.MAX_VALUE; // leave seas and rivers alone
 		double t = ring / (double) (width + 1);
 		int target = (int) Math.round(B + (nat - B) * t);
 		if (target == nat)
-			return;
+			return nat;
 		BlockState surface = natTopState.is(Blocks.GRASS_BLOCK) || natTopState.is(Blocks.DIRT) ? Blocks.GRASS_BLOCK.defaultBlockState() : natTopState;
 		if (target < nat) {
 			for (int y = w.anyTop(X, Z); y > target; y--)
@@ -1231,6 +1250,7 @@ public final class CityPlan {
 				w.set(X, y, Z, pal.get("ground.subsoil"));
 			w.set(X, target, Z, surface);
 		}
+		return target;
 	}
 
 	static long hash(int x, int z) {

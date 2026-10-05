@@ -67,17 +67,42 @@ public final class WorldWriter {
 		return height(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
 	}
 
-	/** y of the natural ground surface: like groundTop, but looking through tree trunks, plants and snow */
+	/** y of the natural ground surface: like groundTop, but looking through trees, tall plants, snow and falls */
 	public int naturalGround(int x, int z) {
 		int y = groundTop(x, z);
 		while (y > minY()) {
 			BlockState s = get(x, y, z);
-			if (!s.getFluidState().isEmpty() || !(s.isAir() || s.canBeReplaced() || s.is(net.minecraft.tags.BlockTags.LOGS)
-					|| s.is(net.minecraft.tags.BlockTags.LEAVES)))
+			// a source block is a lake or sea surface; flowing water/lava (falls, spills) is looked through
+			if (s.getFluidState().isSource() || !(s.isAir() || !s.getFluidState().isEmpty() || s.canBeReplaced() || growth(s)))
 				break;
 			y--;
 		}
 		return y;
+	}
+
+	private static final java.util.Set<Block> GROWTH = java.util.Set.of(Blocks.BAMBOO, Blocks.BAMBOO_SAPLING, Blocks.SUGAR_CANE,
+			Blocks.CACTUS, Blocks.CACTUS_FLOWER, Blocks.BROWN_MUSHROOM_BLOCK, Blocks.RED_MUSHROOM_BLOCK, Blocks.MUSHROOM_STEM,
+			Blocks.BEE_NEST, Blocks.COCOA, Blocks.BIG_DRIPLEAF, Blocks.BIG_DRIPLEAF_STEM, Blocks.POINTED_DRIPSTONE,
+			Blocks.MANGROVE_ROOTS, Blocks.PUMPKIN, Blocks.MELON);
+
+	/** things growing on the ground rather than ground: trees, bamboo (up to 16 tall), cane, cactus, flowers... */
+	static boolean growth(BlockState s) {
+		return s.is(net.minecraft.tags.BlockTags.LOGS) || s.is(net.minecraft.tags.BlockTags.LEAVES)
+				|| s.is(net.minecraft.tags.BlockTags.FLOWERS) || s.is(net.minecraft.tags.BlockTags.SAPLINGS) || GROWTH.contains(s.getBlock());
+	}
+
+	/**
+	 * Stop natural water and lava around a chunk from flowing while it's rebuilt: load its neighbours (so their
+	 * fluids' pending ticks exist now) and drop the pending fluid ticks of all nine chunks. Otherwise water and lava
+	 * from terrain that isn't cut yet pours into columns that are, and once its source is cut away the fall is left
+	 * standing in the air (our writes don't send neighbour updates).
+	 */
+	public void freezeFluids(int cx, int cz) {
+		for (int dz = -1; dz <= 1; dz++)
+			for (int dx = -1; dx <= 1; dx++)
+				level.getChunk(cx + dx, cz + dz);
+		level.getFluidTicks().clearArea(new net.minecraft.world.level.levelgen.structure.BoundingBox(cx * 16 - 16, minY(),
+				cz * 16 - 16, cx * 16 + 31, maxY(), cz * 16 + 31));
 	}
 
 	/** y of the topmost non-air block of any kind (trees included). */

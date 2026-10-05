@@ -2,6 +2,17 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.0
+Syxcraft:
+- Fix: no more water and lava columns standing in the air over the city. Cutting through a mountain let its water and
+  lava pour into the part already built, and the falls were left behind once their source was cut away. Fluids now
+  stay put around the chunk being built, and a new sweep pass removes any stray water or lava left above what was
+  built.
+- Fix: no more thin soil pillars with Local topography. It measured the natural ground at the top of bamboo (up to
+  16 blocks tall) and built the ground up to there. It now looks through bamboo, sugar cane, cactus, huge mushrooms,
+  flowers and other plants, and through waterfalls.
+- `/syx check` also reports `highLavaColumns` and `spikes` (columns 6+ blocks above all four neighbours).
+
 ## 1.5.0
 Syxcraft:
 - Chambers (rich people's houses): a bed with a gold-studded dark oak headboard, red carpets with a gold runner

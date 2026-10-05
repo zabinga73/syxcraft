@@ -11,13 +11,13 @@ import net.minecraft.server.level.ServerLevel;
 
 /**
  * Builds a city over many server ticks within a time budget, so the game keeps running. Stages: pick the ground
- * height, build every block column chunk by chunk, blend the edges into the terrain, then trees, furniture and
- * citizens.
+ * height, build every block column chunk by chunk, blend the edges into the terrain, sweep away stray water and
+ * lava, then trees, furniture and citizens.
  */
 public final class PlacementJob {
 
 	public enum Stage {
-		HEIGHT, COLUMNS, BLEND, DETAILS, DONE, CANCELLED, FAILED
+		HEIGHT, COLUMNS, BLEND, SWEEP, DETAILS, DONE, CANCELLED, FAILED
 	}
 
 	static final int BLEND_WIDTH = 16;
@@ -38,6 +38,8 @@ public final class PlacementJob {
 	private final int[] chunkOrder; // packed chunk x/z offsets relative to region
 	private int chunkIdx;
 	private final int chunksX, chunksZ, cx0, cz0;
+	/** per footprint block outside the region: the ground y blending left (MIN_VALUE: not blended) */
+	private final int[] blendTop;
 
 	// DETAILS
 	private List<Runnable> details;
@@ -57,6 +59,8 @@ public final class PlacementJob {
 		chunkOrder = new int[chunksX * chunksZ];
 		for (int i = 0; i < chunkOrder.length; i++)
 			chunkOrder[i] = i;
+		blendTop = new int[chunksX * 16 * chunksZ * 16];
+		Arrays.fill(blendTop, Integer.MIN_VALUE);
 
 		switch (st.height) {
 		case SEA_LEVEL -> {
@@ -106,21 +110,27 @@ public final class PlacementJob {
 				}
 				case COLUMNS -> {
 					if (chunkIdx >= chunkOrder.length) {
-						stage = plan.st.has(PlaceSettings.BLEND_EDGES) ? Stage.BLEND : Stage.DETAILS;
+						stage = plan.st.has(PlaceSettings.BLEND_EDGES) ? Stage.BLEND : Stage.SWEEP;
 						chunkIdx = 0;
-						if (stage == Stage.DETAILS)
-							details = detailJobs();
 						continue;
 					}
 					columnsOfChunk(chunkOrder[chunkIdx++], false);
 				}
 				case BLEND -> {
 					if (chunkIdx >= chunkOrder.length) {
+						stage = Stage.SWEEP;
+						chunkIdx = 0;
+						continue;
+					}
+					columnsOfChunk(chunkOrder[chunkIdx++], true);
+				}
+				case SWEEP -> {
+					if (chunkIdx >= chunkOrder.length) {
 						stage = Stage.DETAILS;
 						details = detailJobs();
 						continue;
 					}
-					columnsOfChunk(chunkOrder[chunkIdx++], true);
+					sweepChunk(chunkOrder[chunkIdx++]);
 				}
 				case DETAILS -> {
 					if (detailIdx >= details.size()) {
@@ -162,6 +172,7 @@ public final class PlacementJob {
 
 	private void columnsOfChunk(int c, boolean blend) {
 		int cx = cx0 + c % chunksX, cz = cz0 + c / chunksX;
+		w.freezeFluids(cx, cz);
 		for (int z = cz * 16; z < cz * 16 + 16; z++)
 			for (int x = cx * 16; x < cx * 16 + 16; x++) {
 				int bx = x - plan.X0, bz = z - plan.Z0;
@@ -172,8 +183,21 @@ public final class PlacementJob {
 				} else if (!inside) {
 					int ring = Math.max(Math.max(-bx, bx - plan.bw + 1), Math.max(-bz, bz - plan.bh + 1));
 					if (ring >= 1 && ring <= BLEND_WIDTH)
-						plan.blendColumn(w, x, z, ring, BLEND_WIDTH);
+						blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16] = plan.blendColumn(w, x, z, ring, BLEND_WIDTH);
 				}
+			}
+	}
+
+	private void sweepChunk(int c) {
+		int cx = cx0 + c % chunksX, cz = cz0 + c / chunksX;
+		w.freezeFluids(cx, cz);
+		for (int z = cz * 16; z < cz * 16 + 16; z++)
+			for (int x = cx * 16; x < cx * 16 + 16; x++) {
+				int bx = x - plan.X0, bz = z - plan.Z0;
+				boolean inside = bx >= 0 && bz >= 0 && bx < plan.bw && bz < plan.bh;
+				int expect = inside ? plan.builtTop[bx + bz * plan.bw] : blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16];
+				if (expect != Integer.MIN_VALUE && expect != Integer.MAX_VALUE)
+					CityPlan.sweepFluids(w, x, z, expect);
 			}
 	}
 
@@ -185,14 +209,16 @@ public final class PlacementJob {
 	}
 
 	public boolean running() {
-		return stage == Stage.HEIGHT || stage == Stage.COLUMNS || stage == Stage.BLEND || stage == Stage.DETAILS;
+		return stage == Stage.HEIGHT || stage == Stage.COLUMNS || stage == Stage.BLEND || stage == Stage.SWEEP
+				|| stage == Stage.DETAILS;
 	}
 
 	public float progress() {
 		return switch (stage) {
 		case HEIGHT -> 0.02f * sampleIdx / Math.max(1, samplePoints.size());
-		case COLUMNS -> 0.02f + 0.78f * chunkIdx / Math.max(1, chunkOrder.length);
-		case BLEND -> 0.80f + 0.05f * chunkIdx / Math.max(1, chunkOrder.length);
+		case COLUMNS -> 0.02f + 0.76f * chunkIdx / Math.max(1, chunkOrder.length);
+		case BLEND -> 0.78f + 0.04f * chunkIdx / Math.max(1, chunkOrder.length);
+		case SWEEP -> 0.82f + 0.03f * chunkIdx / Math.max(1, chunkOrder.length);
 		case DETAILS -> 0.85f + 0.15f * detailIdx / Math.max(1, details.size());
 		default -> 1f;
 		};
@@ -203,6 +229,7 @@ public final class PlacementJob {
 		case HEIGHT -> "Measuring terrain";
 		case COLUMNS -> "Building terrain and buildings";
 		case BLEND -> "Blending edges";
+		case SWEEP -> "Sweeping away stray water and lava";
 		case DETAILS -> "Trees, furniture and citizens";
 		case DONE -> "Done";
 		case CANCELLED -> "Cancelled";
