@@ -49,6 +49,9 @@ public final class CityPlan {
 	/** per region block: which connected building it belongs to (-1 = none); per building: extra height and roof wood */
 	private int[] buildingOf;
 	private int[] buildingExtra;
+	/** per building: its roof style (MIXED resolved) and its deepest roof distance (how far its middle is from a wall) */
+	private PlaceSettings.Roof[] buildingRoof;
+	private int[] buildingDepth;
 	private String[] buildingWood;
 	static final String[] WOODS = { "oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry" };
 	/** per tile: distance (8-way, capped) to the nearest settled tile or water; where topography may lift ground */
@@ -468,6 +471,9 @@ public final class CityPlan {
 		java.util.Arrays.fill(buildingOf, -1);
 		List<Integer> extra = new ArrayList<>();
 		List<String> wood = new ArrayList<>();
+		List<PlaceSettings.Roof> roofs = new ArrayList<>();
+		List<Integer> depth = new ArrayList<>();
+		PlaceSettings.Roof[] mixed = { PlaceSettings.Roof.HIPPED, PlaceSettings.Roof.POINTED, PlaceSettings.Roof.DOMED };
 		int max = st.maxExtraHeight();
 		ArrayDeque<Integer> q = new ArrayDeque<>();
 		for (int start = 0; start < n; start++) {
@@ -478,10 +484,13 @@ public final class CityPlan {
 			double u = ((h >>> 11) % 10000) / 10000.0;
 			extra.add((int) Math.round(max * u * u * u)); // ~80% in the lower half, most near the bottom
 			wood.add(WOODS[(int) ((h >>> 3) % WOODS.length)]);
+			roofs.add(st.roof == PlaceSettings.Roof.MIXED ? mixed[(int) ((h >>> 23) % mixed.length)] : st.roof);
+			int deepest = 0;
 			buildingOf[start] = id;
 			q.add(start);
 			while (!q.isEmpty()) {
 				int i = q.poll(), x = i % bw, z = i / bw;
+				deepest = Math.max(deepest, roofDist[i]);
 				for (int k = 0; k < 4; k++) {
 					int nx = x + DX[k], nz = z + DY[k];
 					if (nx < 0 || nz < 0 || nx >= bw || nz >= bh)
@@ -493,9 +502,12 @@ public final class CityPlan {
 					}
 				}
 			}
+			depth.add(deepest);
 		}
 		buildingExtra = extra.stream().mapToInt(Integer::intValue).toArray();
 		buildingWood = wood.toArray(new String[0]);
+		buildingRoof = roofs.toArray(new PlaceSettings.Roof[0]);
+		buildingDepth = depth.stream().mapToInt(Integer::intValue).toArray();
 	}
 
 	/** interior height of the building at this region block (H outside buildings) */
@@ -942,7 +954,10 @@ public final class CityPlan {
 		String roofStairs = roofWood(blockId("roof." + sk), bx, bz);
 		if (d < 0)
 			return R;
-		if (st.roof == PlaceSettings.Roof.FLAT) {
+		int b = buildingOf == null ? -1 : buildingOf[bx + bz * bw];
+		PlaceSettings.Roof style = b < 0 ? (st.roof == PlaceSettings.Roof.MIXED ? PlaceSettings.Roof.HIPPED : st.roof) : buildingRoof[b];
+		int depth = b < 0 ? d : buildingDepth[b];
+		if (style == PlaceSettings.Roof.FLAT) {
 			put(col, R, roofBlock);
 			if (d == 0) {
 				put(col, R + 1, pal.get("wall." + sk, "wall.default"));
@@ -950,8 +965,7 @@ public final class CityPlan {
 			}
 			return R;
 		}
-		int maxRise = s >= 2 ? 6 : 4;
-		int r = Math.min(d, maxRise);
+		int r = rise(style, d, depth);
 		if (d > 0)
 			put(col, R, pal.get("ceiling." + sk, "ceiling.default"));
 		// the space under the roof slope is filled solid: a dark hollow attic is a mob spawner
@@ -961,7 +975,7 @@ public final class CityPlan {
 		int best = -1, bestR = r;
 		for (int k = 0; k < 4; k++) {
 			int nd = roofDistAt(bx + DX[k], bz + DY[k]);
-			int nr = Math.min(Math.max(nd, -1), maxRise);
+			int nr = nd < 0 ? -1 : rise(style, nd, depth);
 			if (nr > bestR) {
 				bestR = nr;
 				best = k;
@@ -972,6 +986,26 @@ public final class CityPlan {
 		else
 			put(col, R + r, roofBlock);
 		return R + r;
+	}
+
+	/** how far a roof rises above the wall top at roof distance d, in a building whose middle is depth from a wall */
+	private int rise(PlaceSettings.Roof style, int d, int depth) {
+		switch (style) {
+		case POINTED: {
+			// two up per block; a building too big for that within the cap gets a shallower slope, so it still
+			// comes to a ridge rather than a flat top
+			int cap = s >= 2 ? 16 : 10;
+			return 2 * depth <= cap ? 2 * d : (int) Math.round(cap * d / (double) Math.max(1, depth));
+		}
+		case DOMED: {
+			// a quarter circle from the wall to the middle: steep at the walls, rounding over at the top
+			int hd = Math.min(Math.max(2, depth), s >= 2 ? 12 : 8);
+			double t = (depth - d) / (depth + 0.5);
+			return (int) Math.round(hd * Math.sqrt(Math.max(0, 1 - t * t)));
+		}
+		default:
+			return Math.min(d, s >= 2 ? 6 : 4);
+		}
 	}
 
 	/* ------------------------------------------------------------------ */

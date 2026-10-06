@@ -271,10 +271,17 @@ public final class SyxServer {
 		st.file = StringArgumentType.getString(c, "file");
 		st.scale = scale;
 		try {
-			// "local" or "local+sea": topography, then optionally the ground height mode (auto | sea | custom)
+			// "local", "local+sea", "flat+domed+sea": topography, then optionally a ground height mode (auto | sea |
+			// custom) and a roof style (hipped | pointed | domed | flat | mixed), in any order
 			String[] t = StringArgumentType.getString(c, "topography").toUpperCase().split("\\+");
-			if (t.length > 1)
-				st.height = t[1].startsWith("SEA") ? PlaceSettings.Height.SEA_LEVEL : PlaceSettings.Height.valueOf(t[1]);
+			for (int k = 1; k < t.length; k++) {
+				if (t[k].startsWith("SEA"))
+					st.height = PlaceSettings.Height.SEA_LEVEL;
+				else if (t[k].equals("AUTO") || t[k].equals("CUSTOM"))
+					st.height = PlaceSettings.Height.valueOf(t[k]);
+				else
+					st.roof = PlaceSettings.Roof.valueOf(t[k]);
+			}
 			st.topography = PlaceSettings.Topography.valueOf(t[0]);
 		} catch (IllegalArgumentException e) {
 			// not given (or not a known one): flat

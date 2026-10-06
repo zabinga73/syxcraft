@@ -2,6 +2,15 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.3
+Syxcraft:
+- Roof styles (placer screen, Roof): besides Hipped and Flat there are now
+  - Pointed: steep, two blocks up per block, up to a sharp ridge (big buildings slope a little less so they still
+    come to a point, up to 16 blocks at scale 2).
+  - Domed: steep at the walls and rounding over to the top, sized to each building (up to 12 blocks at scale 2).
+  - Mixed: each building gets hipped, pointed or domed at random.
+- `/syx place ... at <x> <z> <topography>+<options>` also takes a roof style, e.g. `flat+domed` or `local+sea+mixed`.
+
 ## 1.6.2
 Syxcraft:
 - Fix: mountains at the edge of the city are smoothed even where water sits on them (a pool, spring or waterfall

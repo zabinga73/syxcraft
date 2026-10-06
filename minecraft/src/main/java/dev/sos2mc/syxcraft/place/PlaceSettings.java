@@ -29,7 +29,15 @@ public final class PlaceSettings {
 	}
 
 	public enum Roof {
-		HIPPED, FLAT
+		/** sloping up one block per block from every wall, flat-topped past 6 (4 at scale 1) */
+		HIPPED,
+		/** steep: two blocks per block, up to a sharp ridge */
+		POINTED,
+		/** rounded: steep at the walls, curving over to a round top, sized to each building */
+		DOMED,
+		FLAT,
+		/** each building picks hipped, pointed or domed */
+		MIXED
 	}
 
 	public enum Topography {

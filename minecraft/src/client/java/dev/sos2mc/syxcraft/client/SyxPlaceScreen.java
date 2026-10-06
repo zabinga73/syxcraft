@@ -153,7 +153,13 @@ public class SyxPlaceScreen extends Screen {
 		toggle(right, y, colW / 2 - 2, "Furniture", PlaceSettings.FURNITURE, "Tables, workshops, storage barrels, shrines...");
 		toggle(right + colW / 2 + 2, y, colW / 2 - 2, "Quarries", PlaceSettings.QUARRIES, "Dig mines and clay pits as quarries with a ladder.");
 		y += ROW;
-		addRenderableWidget(CycleButton.builder((PlaceSettings.Roof r) -> Component.literal(r == PlaceSettings.Roof.HIPPED ? "Hipped" : "Flat"), st.roof)
+		addRenderableWidget(CycleButton.builder((PlaceSettings.Roof r) -> Component.literal(switch (r) {
+		case HIPPED -> "Hipped";
+		case POINTED -> "Pointed";
+		case DOMED -> "Domed";
+		case FLAT -> "Flat";
+		case MIXED -> "Mixed";
+		}), st.roof)
 				.withValues(PlaceSettings.Roof.values()).create(right, y, colW / 2 - 2, 20, Component.literal("Roof"), (b, v) -> st.roof = v));
 		addRenderableWidget(CycleButton.builder((Integer h) -> Component.literal(h == 0 ? "auto" : String.valueOf(h)), st.wallHeight)
 				.withValues(0, 3, 4, 5, 6, 8).create(right + colW / 2 + 2, y, colW / 2 - 2, 20, Component.literal("Walls"), (b, v) -> st.wallHeight = v));
