@@ -52,6 +52,8 @@ public final class CityPlan {
 	/** per building: its roof style (MIXED resolved) and its deepest roof distance (how far its middle is from a wall) */
 	private PlaceSettings.Roof[] buildingRoof;
 	private int[] buildingDepth;
+	/** per region block: water in a farm, placed so every farmland block is within 4 of water in its own farm */
+	private java.util.BitSet farmWater;
 	/** per building: its footprint's bounding box in region blocks (minX, minZ, maxX, maxZ), for domes */
 	private int[][] buildingBox;
 	private String[] buildingWood;
@@ -418,7 +420,57 @@ public final class CityPlan {
 	}
 
 	/** Chebyshev distance field over building blocks of the region (for hipped roofs). */
+	/**
+	 * Lays out each crop farm's water. Farmland stays wet within 4 blocks of water, so a fixed world grid left thin or
+	 * oddly shaped farms with strips out of reach that dried out. Greedy per farm: the first block (row by row) not yet
+	 * in reach gets water up to 4 further along and down, kept inside the farm, which brings it and its 9x9 into reach.
+	 */
+	private void computeFarmWater() {
+		farmWater = new java.util.BitSet(bw * bh);
+		for (SyxMap.Room r : map.rooms) {
+			if (r.blueprint() == null || !r.blueprint().startsWith("FARM_") || !isFarmland(farmCrop(r.blueprint().substring(5), 0, 0)))
+				continue;
+			int bx0 = (r.x1() - tx0) * s, bz0 = (r.y1() - ty0) * s, bx1 = (r.x2() - tx0 + 1) * s - 1, bz1 = (r.y2() - ty0 + 1) * s - 1;
+			bx0 = Math.max(0, bx0);
+			bz0 = Math.max(0, bz0);
+			bx1 = Math.min(bw - 1, bx1);
+			bz1 = Math.min(bh - 1, bz1);
+			if (bx0 > bx1 || bz0 > bz1)
+				continue;
+			int fw = bx1 - bx0 + 1, fh = bz1 - bz0 + 1;
+			boolean[] wet = new boolean[fw * fh];
+			for (int z = bz0; z <= bz1; z++)
+				for (int x = bx0; x <= bx1; x++) {
+					if (wet[(x - bx0) + (z - bz0) * fw] || !inRoom(r.id(), x, z))
+						continue;
+					// the water: as far as 4 along and down (so it covers this block and the most of what's next), but
+					// on a block of this farm
+					int wx = x, wz = z;
+					search: for (int dz = 4; dz >= 0; dz--)
+						for (int dx = 4; dx >= -4; dx--)
+							if (inRoom(r.id(), x + dx, z + dz)) {
+								wx = x + dx;
+								wz = z + dz;
+								break search;
+							}
+					farmWater.set(wx + wz * bw);
+					for (int zz = Math.max(bz0, wz - 4); zz <= Math.min(bz1, wz + 4); zz++)
+						for (int xx = Math.max(bx0, wx - 4); xx <= Math.min(bx1, wx + 4); xx++)
+							wet[(xx - bx0) + (zz - bz0) * fw] = true;
+				}
+		}
+	}
+
+	private boolean inRoom(int id, int bx, int bz) {
+		return bx >= 0 && bz >= 0 && bx < bw && bz < bh && map.roomId(map.idx(tileOfBlockX(bx), tileOfBlockZ(bz))) == id;
+	}
+
+	static boolean isFarmland(String crop) {
+		return crop.contains("wheat") || crop.contains("carrots") || crop.contains("potatoes") || crop.contains("beetroots");
+	}
+
 	void computeRoofDistances() {
+		computeFarmWater();
 		int n = bw * bh;
 		roofDist = new int[n];
 		ArrayDeque<Integer> q = new ArrayDeque<>();
@@ -763,8 +815,8 @@ public final class CityPlan {
 		BlockState air = Blocks.AIR.defaultBlockState();
 		if (key.startsWith("FARM_")) {
 			String crop = farmCrop(key.substring(5), X, Z);
-			boolean farmland = crop.contains("wheat") || crop.contains("carrots") || crop.contains("potatoes") || crop.contains("beetroots");
-			if (farmland && Math.floorMod(X, 9) == 4 && Math.floorMod(Z, 9) == 4) {
+			boolean farmland = isFarmland(crop);
+			if (farmland && farmWater != null && farmWater.get(bx + bz * bw)) {
 				put(col, B, pal.get("water")); // hydration, like a vanilla farm
 				return B;
 			}

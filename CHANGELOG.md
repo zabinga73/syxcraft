@@ -2,6 +2,13 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.5
+Syxcraft:
+- Fix: farms no longer have strips that dry out. Their water sat on a fixed world grid, so thin or oddly shaped farms
+  had farmland more than 4 blocks from any water. Each farm now gets its own water, laid out so every farmland block
+  is within 4 blocks of water in the same farm (on DEMOLAND: dry farmland 284 -> 0 blocks in farms).
+- `/syx check` reports `farmland` and `dryFarmland`.
+
 ## 1.6.4
 Syxcraft:
 - Domed roofs redone: each building gets an elliptical dome over its footprint that peaks in the middle (about as

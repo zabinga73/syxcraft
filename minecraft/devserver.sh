@@ -16,6 +16,9 @@ case "$1" in
     grep -E "Done \(|FAILED" run/server.out ;;
   cmd)  echo "$2" > run/in ;;
   stop)
+    # nothing running: writing to the fifo would block forever with no reader
+    pid=$(cat run/server.pid 2>/dev/null)
+    if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then echo "not running"; exit 0; fi
     echo stop > run/in
     until grep -q "BUILD SUCCESSFUL\|BUILD FAILED" run/server.out; do sleep 2; done
     pid=$(cat run/server.pid 2>/dev/null); [[ -n "$pid" ]] && pkill -P "$pid" 2>/dev/null; kill "$pid" 2>/dev/null; echo stopped ;;
