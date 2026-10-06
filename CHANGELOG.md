@@ -2,6 +2,15 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.4
+Syxcraft:
+- Domed roofs redone: each building gets an elliptical dome over its footprint that peaks in the middle (about as
+  tall as the building is wide, up to 12 blocks at scale 2), with a low hipped skirt round the walls. It never rises
+  more than two blocks per block from a wall, so odd-shaped buildings get no sheer faces. Fix: the gap along the
+  wall top under a dome, where the wooden ceiling showed through, is closed.
+- Chambers: tall rooms get more rows of paintings further up the walls, one every 4 blocks.
+- Pools: only stone pools get the quartz rim and andesite wall; ponds have their wooden rim and fence back.
+
 ## 1.6.3
 Syxcraft:
 - Roof styles (placer screen, Roof): besides Hipped and Flat there are now

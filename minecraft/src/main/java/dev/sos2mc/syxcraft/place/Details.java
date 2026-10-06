@@ -602,29 +602,38 @@ final class Details {
 					if (!m.inBounds(ntx, nty) || p.kind[m.idx(ntx, nty)] != CityPlan.WALL)
 						continue;
 					long h = CityPlan.hash(tx * 7 + dir, ty * 11 + 3);
-					if ((h & 1) != 0)
-						continue;
 					// the block in front of the middle of this tile's wall side, facing into the room
 					int x = p.blockX(tx) + (dir == 1 ? s - 1 : dir == 3 ? 0 : s / 2);
 					int z = p.blockZ(ty) + (dir == 2 ? s - 1 : dir == 0 ? 0 : s / 2);
 					Direction facing = FACING[(dir + 2) % 4];
-					BlockPos pos = new BlockPos(x, B + 2, z);
-					List<Holder<PaintingVariant>> vs = new ArrayList<>(all);
-					java.util.Collections.shuffle(vs, new java.util.Random(h));
-					for (Holder<PaintingVariant> v : vs) {
-						if (v.value().height() > maxH || v.value().width() > maxW)
+					// eye level, then a row every 4 blocks further up while the room is tall enough; each row picks
+					// its own wall tiles, so they don't stack in columns
+					int ceiling = B + p.heightAt(x - p.X0, z - p.Z0);
+					for (int row = 0, y = B + 2; y + 1 <= ceiling; row++, y += 4) {
+						if (((h >> row) & 1) != 0)
 							continue;
-						Painting pt = new Painting(w.level, pos, facing, v);
-						if (!pt.survives() || overWindow(w, pt, facing))
-							continue;
-						pt.addTag(PAINTING_TAG);
-						w.level.addFreshEntity(pt);
-						hung++;
-						break;
+						hung += hang(w, all, new BlockPos(x, y, z), facing, h >> 8 + row, maxH, maxW);
 					}
 				}
 			}
 		dev.sos2mc.syxcraft.Syxcraft.LOG.info("{} paintings in chamber {}", hung, r.id());
+	}
+
+	/** one painting at pos if any variant fits there (and isn't over a window); returns 1 if one went up */
+	private int hang(WorldWriter w, List<Holder<PaintingVariant>> all, BlockPos pos, Direction facing, long h, int maxH, int maxW) {
+		List<Holder<PaintingVariant>> vs = new ArrayList<>(all);
+		java.util.Collections.shuffle(vs, new java.util.Random(h));
+		for (Holder<PaintingVariant> v : vs) {
+			if (v.value().height() > maxH || v.value().width() > maxW)
+				continue;
+			Painting pt = new Painting(w.level, pos, facing, v);
+			if (!pt.survives() || overWindow(w, pt, facing))
+				continue;
+			pt.addTag(PAINTING_TAG);
+			w.level.addFreshEntity(pt);
+			return 1;
+		}
+		return 0;
 	}
 
 	/** true if any block behind the painting is glass, a pane, bars or a door (or not there at all) */

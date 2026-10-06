@@ -52,6 +52,8 @@ public final class CityPlan {
 	/** per building: its roof style (MIXED resolved) and its deepest roof distance (how far its middle is from a wall) */
 	private PlaceSettings.Roof[] buildingRoof;
 	private int[] buildingDepth;
+	/** per building: its footprint's bounding box in region blocks (minX, minZ, maxX, maxZ), for domes */
+	private int[][] buildingBox;
 	private String[] buildingWood;
 	static final String[] WOODS = { "oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry" };
 	/** per tile: distance (8-way, capped) to the nearest settled tile or water; where topography may lift ground */
@@ -473,6 +475,7 @@ public final class CityPlan {
 		List<String> wood = new ArrayList<>();
 		List<PlaceSettings.Roof> roofs = new ArrayList<>();
 		List<Integer> depth = new ArrayList<>();
+		List<int[]> boxes = new ArrayList<>();
 		PlaceSettings.Roof[] mixed = { PlaceSettings.Roof.HIPPED, PlaceSettings.Roof.POINTED, PlaceSettings.Roof.DOMED };
 		int max = st.maxExtraHeight();
 		ArrayDeque<Integer> q = new ArrayDeque<>();
@@ -486,11 +489,17 @@ public final class CityPlan {
 			wood.add(WOODS[(int) ((h >>> 3) % WOODS.length)]);
 			roofs.add(st.roof == PlaceSettings.Roof.MIXED ? mixed[(int) ((h >>> 23) % mixed.length)] : st.roof);
 			int deepest = 0;
+			int[] box = { start % bw, start / bw, start % bw, start / bw };
+			boxes.add(box);
 			buildingOf[start] = id;
 			q.add(start);
 			while (!q.isEmpty()) {
 				int i = q.poll(), x = i % bw, z = i / bw;
 				deepest = Math.max(deepest, roofDist[i]);
+				box[0] = Math.min(box[0], x);
+				box[1] = Math.min(box[1], z);
+				box[2] = Math.max(box[2], x);
+				box[3] = Math.max(box[3], z);
 				for (int k = 0; k < 4; k++) {
 					int nx = x + DX[k], nz = z + DY[k];
 					if (nx < 0 || nz < 0 || nx >= bw || nz >= bh)
@@ -508,6 +517,7 @@ public final class CityPlan {
 		buildingWood = wood.toArray(new String[0]);
 		buildingRoof = roofs.toArray(new PlaceSettings.Roof[0]);
 		buildingDepth = depth.stream().mapToInt(Integer::intValue).toArray();
+		buildingBox = boxes.toArray(new int[0][]);
 	}
 
 	/** interior height of the building at this region block (H outside buildings) */
@@ -763,11 +773,12 @@ public final class CityPlan {
 			return B + 1;
 		}
 		if (key.startsWith("POOL_") && roomEdge(bx, bz)) {
-			// a stone rim with a low wall, so a pond by a lake doesn't read as part of the lake: quartz round the
-			// stone pools, polished andesite round ponds (there's no polished andesite fence, the andesite wall is closest)
-			put(col, B, Palette.parse(key.startsWith("POOL_STONE") ? "minecraft:smooth_quartz" : "minecraft:polished_andesite"));
+			// a rim and fence, so a pond by a lake doesn't read as part of the lake: stone pools get a smooth quartz rim
+			// and an andesite wall (there's no polished andesite fence), ponds a wooden rim and fence
+			boolean stone = key.startsWith("POOL_STONE");
+			put(col, B, Palette.parse(stone ? "minecraft:smooth_quartz" : "minecraft:spruce_planks"));
 			put(col, B - 1, pal.get("ground.subsoil"));
-			put(col, B + 1, Palette.parse("minecraft:andesite_wall"));
+			put(col, B + 1, Palette.parse(stone ? "minecraft:andesite_wall" : "minecraft:spruce_fence"));
 			return B + 1;
 		}
 		if (key.startsWith("POOL_") || key.startsWith("_WATERCANAL") || key.startsWith("_WATERDRAIN")) {
@@ -965,9 +976,11 @@ public final class CityPlan {
 			}
 			return R;
 		}
-		int r = rise(style, d, depth);
+		int r = rise(style, d, depth, bx, bz, b);
 		if (d > 0)
 			put(col, R, pal.get("ceiling." + sk, "ceiling.default"));
+		else if (r > 0)
+			put(col, R, roofBlock); // a dome already stands above the wall here: close the gap under it
 		// the space under the roof slope is filled solid: a dark hollow attic is a mob spawner
 		for (int y = R + 1; y < R + r; y++)
 			put(col, y, roofBlock);
@@ -975,7 +988,7 @@ public final class CityPlan {
 		int best = -1, bestR = r;
 		for (int k = 0; k < 4; k++) {
 			int nd = roofDistAt(bx + DX[k], bz + DY[k]);
-			int nr = nd < 0 ? -1 : rise(style, nd, depth);
+			int nr = nd < 0 ? -1 : rise(style, nd, depth, bx + DX[k], bz + DY[k], b);
 			if (nr > bestR) {
 				bestR = nr;
 				best = k;
@@ -989,7 +1002,7 @@ public final class CityPlan {
 	}
 
 	/** how far a roof rises above the wall top at roof distance d, in a building whose middle is depth from a wall */
-	private int rise(PlaceSettings.Roof style, int d, int depth) {
+	private int rise(PlaceSettings.Roof style, int d, int depth, int bx, int bz, int b) {
 		switch (style) {
 		case POINTED: {
 			// two up per block; a building too big for that within the cap gets a shallower slope, so it still
@@ -998,10 +1011,19 @@ public final class CityPlan {
 			return 2 * depth <= cap ? 2 * d : (int) Math.round(cap * d / (double) Math.max(1, depth));
 		}
 		case DOMED: {
-			// a quarter circle from the wall to the middle: steep at the walls, rounding over at the top
-			int hd = Math.min(Math.max(2, depth), s >= 2 ? 12 : 8);
-			double t = (depth - d) / (depth + 0.5);
-			return (int) Math.round(hd * Math.sqrt(Math.max(0, 1 - t * t)));
+			// an elliptical dome over the building's footprint, peaking in the middle and about as tall as it is wide,
+			// with a low hipped skirt round the walls so the corners outside the ellipse are roofed too
+			int skirt = Math.min(d, 2);
+			if (b < 0)
+				return skirt;
+			int[] bb = buildingBox[b];
+			double a = (bb[2] - bb[0] + 1) / 2.0, c = (bb[3] - bb[1] + 1) / 2.0;
+			double u = (bx + 0.5 - (bb[0] + a)) / a, v = (bz + 0.5 - (bb[1] + c)) / c, r2 = u * u + v * v;
+			double hd = Math.min(Math.max(3, Math.sqrt(a * c)), s >= 2 ? 12 : 8);
+			int dome = r2 < 1 ? (int) Math.round(hd * Math.sqrt(1 - r2)) : 0;
+			// never steeper than two up per block from the nearest wall: where an odd-shaped footprint's wall cuts the
+			// ellipse high up, the dome curves down to it instead of ending in a sheer face
+			return Math.max(Math.min(dome, 1 + 2 * d), skirt);
 		}
 		default:
 			return Math.min(d, s >= 2 ? 6 : 4);
