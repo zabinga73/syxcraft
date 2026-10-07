@@ -85,8 +85,8 @@ public final class SyxNet {
 	}
 
 	/** map size, built-up area and a few counts */
-	public record MapInfo(String file, int width, int height, int cx0, int cy0, int cx1, int cy1, int rooms, int furniture)
-			implements CustomPacketPayload {
+	public record MapInfo(String file, int width, int height, int cx0, int cy0, int cx1, int cy1, int rooms, int furniture,
+			byte[] water) implements CustomPacketPayload {
 		public static final Type<MapInfo> TYPE = id("map_info");
 		public static final StreamCodec<RegistryFriendlyByteBuf, MapInfo> CODEC = CustomPacketPayload.codec(MapInfo::write, MapInfo::read);
 
@@ -94,11 +94,17 @@ public final class SyxNet {
 			b.writeUtf(file);
 			for (int v : new int[] { width, height, cx0, cy0, cx1, cy1, rooms, furniture })
 				b.writeVarInt(v);
+			b.writeByteArray(water);
+		}
+
+		/** natural water tiles, for the river check */
+		public java.util.BitSet waterMask() {
+			return java.util.BitSet.valueOf(water);
 		}
 
 		static MapInfo read(RegistryFriendlyByteBuf b) {
 			return new MapInfo(b.readUtf(), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readVarInt(),
-					b.readVarInt(), b.readVarInt(), b.readVarInt());
+					b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readByteArray(1 << 20));
 		}
 
 		@Override
@@ -153,7 +159,7 @@ public final class SyxNet {
 		PayloadTypeRegistry.serverboundPlay().register(Start.TYPE, Start.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(Cancel.TYPE, Cancel.CODEC);
 		PayloadTypeRegistry.clientboundPlay().registerLarge(FileList.TYPE, FileList.CODEC, 1 << 20);
-		PayloadTypeRegistry.clientboundPlay().register(MapInfo.TYPE, MapInfo.CODEC);
+		PayloadTypeRegistry.clientboundPlay().registerLarge(MapInfo.TYPE, MapInfo.CODEC, 1 << 21);
 		PayloadTypeRegistry.clientboundPlay().register(Progress.TYPE, Progress.CODEC);
 	}
 

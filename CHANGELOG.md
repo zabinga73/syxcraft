@@ -2,6 +2,28 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.0
+Syxcraft:
+- River lineup (placer screen, next to Scale; `/syx place <file> 1 ... <topography>+river`): moves the city to where
+  its river lines up best with a Minecraft river, then carries the river out to meet it.
+  - The mark next to the toggle shows whether a river leaves the chosen area of the map: green ✔ yes, red ✘ no. It
+    follows Area and Margin. A river is water that leaves the area in two places far apart round its edge; seas,
+    coasts and lakes clipped by a corner don't count. The toggle is greyed out unless there's a river and the scale
+    is 1.
+  - It searches up to 2048 blocks from the position (you or X/Z) for river biome, using the world generator's noise.
+    No chunks are generated, and the search runs off the server thread. It slides the city's outline to where
+    Minecraft river meets the city's river exits and doesn't run into its dry edges. If under a quarter of the exits
+    meet a river, nothing is placed and the chat says so.
+  - The water goes at sea level, where Minecraft rivers are. The blend ring widens to 48 blocks. In it, each exit
+    becomes a channel that narrows from the city's broad river to the Minecraft river's width (up to 24) and bends
+    over to the nearest open or frozen river water. It gets shallower along the way, with a sand bed.
+  - On Loban: a Minecraft river 1,575 blocks away met 71% of the exits. Both west channels run into a frozen river,
+    and the two east channels merge into a river around an island.
+  - `/syx rivers <file>` lists the river exits for Whole map and each margin.
+- Peaks is on by default (`+nopeaks` turns it off from the command).
+- The placer screen has two pages: "Where & land" (city, position, height, scale, area, River lineup, topography,
+  Peaks) and "What to build" (layers, roofs, walls, quarries, citizens, outline). It fits smaller windows.
+
 ## 1.7.0
 Syxcraft:
 - New toggle, Peaks (placer screen, bottom right, or `/syx place ... <topography>+peaks`): mountains ignore the Hills

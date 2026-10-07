@@ -19,7 +19,7 @@ final class Render {
 
 	static void topDown(PlacementJob j, Path out) throws Exception {
 		ServerLevel level = j.w.level;
-		int pad = 20;
+		int pad = Math.max(20, j.plan.blendWidth() + 8);
 		int x0 = j.plan.X0 - pad, z0 = j.plan.Z0 - pad, w = j.plan.bw + 2 * pad, h = j.plan.bh + 2 * pad;
 		int[] top = new int[w * h];
 		BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
@@ -197,7 +197,7 @@ final class Render {
 					floating++;
 		// land jutting out of the blend ring: a ring column standing 6+ above both its neighbours along the ring (a fin
 		// the blending skipped)
-		int jut = 0, Wd = dev.sos2mc.syxcraft.place.PlacementJob.BLEND_WIDTH;
+		int jut = 0, Wd = j.plan.blendWidth();
 		int bx0 = j.plan.X0 - Wd, bz0 = j.plan.Z0 - Wd, bx1 = j.plan.X0 + j.plan.bw - 1 + Wd, bz1 = j.plan.Z0 + j.plan.bh - 1 + Wd;
 		for (int z = bz0 + 1; z < bz1; z++)
 			for (int x = bx0 + 1; x < bx1; x++) {

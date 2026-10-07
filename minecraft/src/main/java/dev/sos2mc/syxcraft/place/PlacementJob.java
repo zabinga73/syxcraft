@@ -23,6 +23,8 @@ public final class PlacementJob {
 	public static final int BLEND_WIDTH = 16;
 
 	public final CityPlan plan;
+	/** River lineup: where the city's river leaves the area (map tiles), carried out through the blend ring */
+	public List<Rivers.Exit> rivers;
 	public final WorldWriter w;
 	private final Consumer<String> chat;
 
@@ -51,7 +53,7 @@ public final class PlacementJob {
 		this.plan = new CityPlan(map, st, pal, centreX, centreZ);
 		this.w = new WorldWriter(level);
 		this.chat = chat;
-		int margin = st.has(PlaceSettings.BLEND_EDGES) ? BLEND_WIDTH : 0;
+		int margin = st.has(PlaceSettings.BLEND_EDGES) ? plan.blendWidth() : 0;
 		cx0 = Math.floorDiv(plan.X0 - margin, 16);
 		cz0 = Math.floorDiv(plan.Z0 - margin, 16);
 		int cx1 = Math.floorDiv(plan.X0 + plan.bw - 1 + margin, 16), cz1 = Math.floorDiv(plan.Z0 + plan.bh - 1 + margin, 16);
@@ -115,6 +117,8 @@ public final class PlacementJob {
 					if (chunkIdx >= chunkOrder.length) {
 						stage = plan.st.has(PlaceSettings.BLEND_EDGES) ? Stage.BLEND : Stage.SWEEP;
 						chunkIdx = 0;
+						if (stage == Stage.BLEND && plan.st.river && rivers != null)
+							plan.prepareFunnels(w, rivers);
 						continue;
 					}
 					columnsOfChunk(chunkOrder[chunkIdx++], false);
@@ -173,8 +177,9 @@ public final class PlacementJob {
 		// placement (an item's age is saved, so older items lying here stay)
 		jobs.add(() -> {
 			long ticks = w.level.getGameTime() - startTick;
-			var box = new net.minecraft.world.phys.AABB(plan.X0 - BLEND_WIDTH - 2, w.minY(), plan.Z0 - BLEND_WIDTH - 2,
-					plan.X0 + plan.bw + BLEND_WIDTH + 2, w.maxY(), plan.Z0 + plan.bh + BLEND_WIDTH + 2);
+			int bl = plan.blendWidth() + 2;
+			var box = new net.minecraft.world.phys.AABB(plan.X0 - bl, w.minY(), plan.Z0 - bl, plan.X0 + plan.bw + bl, w.maxY(),
+					plan.Z0 + plan.bh + bl);
 			for (var item : w.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, e -> e.getAge() <= ticks))
 				item.discard();
 		});
@@ -195,8 +200,8 @@ public final class PlacementJob {
 						plan.column(w, bx, bz);
 				} else if (!inside) {
 					int ring = Math.max(Math.max(-bx, bx - plan.bw + 1), Math.max(-bz, bz - plan.bh + 1));
-					if (ring >= 1 && ring <= BLEND_WIDTH)
-						blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16] = plan.blendColumn(w, x, z, ring, BLEND_WIDTH);
+					if (ring >= 1 && ring <= plan.blendWidth())
+						blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16] = plan.blendColumn(w, x, z, ring, plan.blendWidth());
 				}
 			}
 	}

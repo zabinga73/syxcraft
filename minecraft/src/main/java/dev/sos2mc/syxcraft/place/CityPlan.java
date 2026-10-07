@@ -1471,6 +1471,9 @@ public final class CityPlan {
 	 * or Integer.MAX_VALUE where it was left alone (seas and rivers)
 	 */
 	int blendColumn(WorldWriter w, int X, int Z, int ring, int width) {
+		int river = funnelColumn(w, X, Z, width);
+		if (river != Integer.MIN_VALUE)
+			return river;
 		final int B = groundY(X - X0, Z - Z0); // the nearest edge column of the city, after topography
 		int top = w.groundTop(X, Z), nat = w.solidGround(X, Z);
 		// water at about city level is a sea, river or lake: leave it alone. Water higher up (a mountain pool, spring
@@ -1493,6 +1496,134 @@ public final class CityPlan {
 			w.set(X, target, Z, surface);
 		}
 		return target;
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* River lineup */
+
+	/** the blend ring is wider with River lineup, so the city's broad river has room to narrow down */
+	static final int RIVER_BLEND = 48;
+
+	public int blendWidth() {
+		return st.river ? RIVER_BLEND : PlacementJob.BLEND_WIDTH;
+	}
+
+	/**
+	 * A river channel through the blend ring, from where the city's river leaves (centre cs, width ws, along the side
+	 * in region blocks) to the Minecraft river found at the ring's outer edge (cm, wm; wm 0 = none found, the channel
+	 * narrows to nothing).
+	 */
+	record Funnel(int side, double cs, double ws, double cm, double wm, int depth) {
+	}
+
+	private List<Funnel> funnels = List.of();
+
+	/** world x/z of a ring column: side, offset along the side (region blocks), ring distance out from the edge */
+	private int[] ringPos(int side, int along, int r) {
+		return switch (side) {
+		case Rivers.N -> new int[] { X0 + along, Z0 - r };
+		case Rivers.S -> new int[] { X0 + along, Z0 + bh - 1 + r };
+		case Rivers.W -> new int[] { X0 - r, Z0 + along };
+		default -> new int[] { X0 + bw - 1 + r, Z0 + along };
+		};
+	}
+
+	/** before blending: one funnel per river exit, aimed at the nearest Minecraft river water past the ring */
+	void prepareFunnels(WorldWriter w, List<Rivers.Exit> exits) {
+		List<Funnel> out = new ArrayList<>();
+		int W = blendWidth();
+		for (Rivers.Exit e : exits) {
+			int off = e.side() == Rivers.N || e.side() == Rivers.S ? tx0 : ty0;
+			double cs = (e.centre() - off + 0.5) * s, ws = e.width() * s;
+			int len = e.side() == Rivers.N || e.side() == Rivers.S ? bw : bh;
+			// the city river's depth where it leaves (its deepest tile)
+			int depth = 2;
+			for (int a = e.from(); a <= e.to(); a++) {
+				int tx = e.side() == Rivers.N || e.side() == Rivers.S ? a : e.side() == Rivers.E ? tx1 : tx0;
+				int ty = e.side() == Rivers.E || e.side() == Rivers.W ? a : e.side() == Rivers.S ? ty1 : ty0;
+				int i = map.idx(tx, ty);
+				if (kind[i] == WATER_DEEP)
+					depth = Math.max(depth, Math.min(14, 3 + dist[i] / 2));
+			}
+			// Minecraft river water along the ring's outer edge, near the exit: runs of water at the city's water level
+			int from = (int) Math.floor(cs - ws - W), to = (int) Math.ceil(cs + ws + W);
+			double bestC = cs, bestW = 0, bestScore = -Double.MAX_VALUE;
+			int run = -1, dry = 0;
+			for (int a = from; a <= to + 1; a++) {
+				boolean wet = false;
+				if (a <= to) {
+					int[] p = ringPos(e.side(), a, W);
+					int top = w.groundTop(p[0], p[1]);
+					BlockState ts = w.get(p[0], top, p[1]);
+					// water, or a frozen river's ice
+					wet = (ts.getFluidState().is(net.minecraft.tags.FluidTags.WATER) || ts.is(net.minecraft.tags.BlockTags.ICE))
+							&& Math.abs(top - (B - 1)) <= 2;
+				}
+				if (wet) {
+					if (run < 0)
+						run = a;
+					dry = 0;
+					continue;
+				}
+				// a run ends after a few dry columns (snow on ice, a sand bar), so patchy rivers count whole; the widest
+				// near the exit wins
+				if (run >= 0 && (++dry > 3 || a > to)) {
+					int end = a - dry;
+					double c = (run + end) / 2.0 + 0.5, width = end - run + 1, score = Math.min(width, 24) - Math.abs(c - cs) / 4;
+					if (score > bestScore) {
+						bestScore = score;
+						bestC = c;
+						bestW = Math.max(4, Math.min(24, width));
+					}
+					run = -1;
+				}
+			}
+			out.add(new Funnel(e.side(), cs, ws, bestW > 0 ? bestC : cs, bestW, depth));
+			dev.sos2mc.syxcraft.Syxcraft.LOG.info("river exit side {} centre {} width {} -> Minecraft river at {} width {} (len {})", e.side(), cs, ws,
+					bestW > 0 ? bestC : "none", bestW, len);
+		}
+		funnels = out;
+	}
+
+	/**
+	 * A ring column inside a funnel becomes river: water at the city's water level, deepest along the middle, on a sand
+	 * bed. Returns the water top, or MIN_VALUE when the column isn't in a funnel.
+	 */
+	private int funnelColumn(WorldWriter w, int X, int Z, int width) {
+		if (funnels.isEmpty())
+			return Integer.MIN_VALUE;
+		int bx = X - X0, bz = Z - Z0, side, along, r;
+		if (bx >= 0 && bx < bw) {
+			side = bz < 0 ? Rivers.N : Rivers.S;
+			along = bx;
+			r = bz < 0 ? -bz : bz - bh + 1;
+		} else if (bz >= 0 && bz < bh) {
+			side = bx < 0 ? Rivers.W : Rivers.E;
+			along = bz;
+			r = bx < 0 ? -bx : bx - bw + 1;
+		} else
+			return Integer.MIN_VALUE; // corners
+		for (Funnel f : funnels) {
+			if (f.side() != side)
+				continue;
+			double t = (r - 1) / (double) Math.max(1, width - 1), sm = t * t * (3 - 2 * t);
+			double c = f.cs() + (f.cm() - f.cs()) * sm, hw = (f.ws() * (1 - sm) + f.wm() * sm) / 2;
+			double off = Math.abs(along + 0.5 - c);
+			if (hw < 1 || off > hw)
+				continue;
+			int dmax = (int) Math.round(f.depth() * (1 - sm) + 3 * sm);
+			int depth = Math.max(1, (int) Math.round(dmax * (1 - (off / hw) * (off / hw)) + 0.5));
+			int top = w.anyTop(X, Z);
+			for (int y = top; y >= B; y--)
+				w.air(X, y, Z);
+			for (int y = B - depth; y <= B - 1; y++)
+				w.set(X, y, Z, pal.get("water"));
+			w.set(X, B - depth - 1, Z, Blocks.SAND.defaultBlockState());
+			for (int y = B - depth - 2; y > B - depth - 10 && WorldWriter.soft(w.get(X, y, Z)); y--)
+				w.set(X, y, Z, pal.get("ground.subsoil"));
+			return B - 1;
+		}
+		return Integer.MIN_VALUE;
 	}
 
 	static long hash(int x, int z) {

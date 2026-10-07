@@ -1,7 +1,9 @@
 package dev.sos2mc.syxcraft;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -14,6 +16,8 @@ import dev.sos2mc.syxcraft.net.SyxNet;
 import dev.sos2mc.syxcraft.place.Palette;
 import dev.sos2mc.syxcraft.place.PlaceSettings;
 import dev.sos2mc.syxcraft.place.PlacementJob;
+import dev.sos2mc.syxcraft.place.RiverFinder;
+import dev.sos2mc.syxcraft.place.Rivers;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -40,6 +44,9 @@ public final class SyxServer {
 	private static UUID owner;
 	private static int ticks;
 	private static SyxMap cached;
+	/** River lineup: the search running before a placement, and what to do with its result */
+	private static CompletableFuture<RiverFinder.Result> riverSearch;
+	private static Consumer<RiverFinder.Result> riverStart;
 	/** the most recent job, kept for /syx render */
 	static PlacementJob last;
 
@@ -59,7 +66,7 @@ public final class SyxServer {
 				return;
 			int[] b = m.cityBounds();
 			ctx.responseSender().sendPacket(new SyxNet.MapInfo(p.file(), m.width, m.height, b[0], b[1], b[2], b[3],
-					m.rooms.size(), m.furniture.size()));
+					m.rooms.size(), m.furniture.size(), dev.sos2mc.syxcraft.place.Rivers.pack(m.waterMask(), m.width * m.height)));
 		});
 		ServerPlayNetworking.registerGlobalReceiver(SyxNet.Start.TYPE, (p, ctx) -> start(ctx.player(), p.settings()));
 		ServerPlayNetworking.registerGlobalReceiver(SyxNet.Cancel.TYPE, (p, ctx) -> {
@@ -107,7 +114,7 @@ public final class SyxServer {
 	}
 
 	public static boolean start(ServerLevel level, PlaceSettings st, int cx, int cz, UUID who, Consumer<String> chat) {
-		if (job != null && job.running()) {
+		if ((job != null && job.running()) || riverSearch != null) {
 			chat.accept("Syx: a city is already being placed (use Cancel or /syx cancel).");
 			return false;
 		}
@@ -115,6 +122,39 @@ public final class SyxServer {
 		if (map == null) {
 			chat.accept("Syx: can't find or read " + st.file);
 			return false;
+		}
+		if (st.river) {
+			// line the city's river up with a Minecraft river first (off the server thread), then place it there
+			if (st.scale != 1) {
+				chat.accept("Syx: River lineup only works at scale 1.");
+				return false;
+			}
+			int[] region = Rivers.region(map.width, map.height, map.cityBounds(), st.area, st.margin);
+			List<Rivers.Exit> exits = Rivers.find(map.waterMask(), map.width, region);
+			if (exits.isEmpty()) {
+				chat.accept("Syx: no river leaves this area of the map, so there's nothing to line up. Try Whole map or a bigger margin.");
+				return false;
+			}
+			st.height = PlaceSettings.Height.SEA_LEVEL;
+			owner = who;
+			chat.accept(String.format("Syx: looking for a Minecraft river within %d blocks to line up with (%d river exits)...",
+					RiverFinder.RADIUS, exits.size()));
+			riverSearch = CompletableFuture.supplyAsync(() -> RiverFinder.find(level, map.waterMask(), map.width, region, exits, cx, cz));
+			riverStart = r -> {
+				if (r.exitsMet() < 0.25) {
+					chat.accept(String.format("Syx: no Minecraft river within %d blocks lines up (best: %d%% of the river's exits). Nothing placed; try somewhere else.",
+							RiverFinder.RADIUS, Math.round(r.exitsMet() * 100)));
+					return;
+				}
+				chat.accept(String.format("Syx: lined up with a river at x=%d z=%d (%d blocks away, %d%% of the river's exits meet it).",
+						r.x(), r.z(), Math.round(Math.hypot(r.x() - cx, r.z() - cz)), Math.round(r.exitsMet() * 100)));
+				job = new PlacementJob(level, map, st, Palette.load(), r.x(), r.z(), msg -> {
+					chat.accept(msg);
+					Syxcraft.LOG.info(msg);
+				});
+				job.rivers = exits;
+			};
+			return true;
 		}
 		job = new PlacementJob(level, map, st, Palette.load(), cx, cz, msg -> {
 			chat.accept(msg);
@@ -125,11 +165,35 @@ public final class SyxServer {
 	}
 
 	public static void cancel() {
+		if (riverSearch != null) {
+			riverSearch.cancel(true);
+			riverSearch = null;
+		}
 		if (job != null)
 			job.cancel();
 	}
 
 	private static void tick(MinecraftServer server) {
+		if (riverSearch != null) {
+			ServerPlayer pl = server.getPlayerList().getPlayer(owner);
+			if (riverSearch.isDone()) {
+				var search = riverSearch;
+				riverSearch = null;
+				try {
+					riverStart.accept(search.join());
+				} catch (Exception e) {
+					Syxcraft.LOG.error("river search failed", e);
+					if (pl != null)
+						pl.sendSystemMessage(Component.literal("Syx: river search failed: " + e));
+				}
+				if (job == null && pl != null && ServerPlayNetworking.canSend(pl, SyxNet.Progress.TYPE))
+					ServerPlayNetworking.send(pl, new SyxNet.Progress("No river lined up", 0, false));
+			} else if (++ticks % 10 == 0 && pl != null) {
+				if (ServerPlayNetworking.canSend(pl, SyxNet.Progress.TYPE))
+					ServerPlayNetworking.send(pl, new SyxNet.Progress("Looking for a river", 0, true));
+				pl.sendOverlayMessage(Component.literal("Syx: looking for a river..."));
+			}
+		}
 		if (job == null)
 			return;
 		last = job;
@@ -155,6 +219,20 @@ public final class SyxServer {
 	private static void commands(CommandDispatcher<CommandSourceStack> d) {
 		d.register(Commands.literal("syx")
 				.then(Commands.literal("list").executes(SyxServer::list))
+				.then(Commands.literal("rivers").then(Commands.argument("file", StringArgumentType.string()).executes(c -> {
+					// which areas of a map have a river to line up with (what the placer screen's check mark shows)
+					SyxMap m = load(StringArgumentType.getString(c, "file"));
+					if (m == null)
+						return 0;
+					for (int margin : new int[] { -1, 8, 16, 32, 64, 128 }) {
+						int[] r = Rivers.region(m.width, m.height, m.cityBounds(), margin < 0 ? PlaceSettings.Area.WHOLE_MAP : PlaceSettings.Area.CITY,
+								Math.max(0, margin));
+						List<Rivers.Exit> ex = Rivers.find(m.waterMask(), m.width, r);
+						c.getSource().sendSystemMessage(Component.literal((margin < 0 ? "Whole map" : "City +" + margin) + ": "
+								+ (ex.isEmpty() ? "no river" : ex.size() + " exits " + ex)));
+					}
+					return 1;
+				})))
 				.then(Commands.literal("cancel").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).executes(c -> {
 					cancel();
 					return 1;
@@ -272,7 +350,7 @@ public final class SyxServer {
 		st.scale = scale;
 		try {
 			// "local", "local+sea", "flat+domed+sea": topography, then optionally a ground height mode (auto | sea |
-			// custom), a roof style (hipped | pointed | domed | flat | mixed), "citizens" and "peaks", in any order
+			// custom), a roof style (hipped | pointed | domed | flat | mixed), "citizens", "peaks"/"nopeaks" and "river", in any order
 			String[] t = StringArgumentType.getString(c, "topography").toUpperCase().split("\\+");
 			for (int k = 1; k < t.length; k++) {
 				if (t[k].startsWith("SEA"))
@@ -281,6 +359,10 @@ public final class SyxServer {
 					st.set(PlaceSettings.CITIZENS, true);
 				else if (t[k].equals("PEAKS"))
 					st.peaks = true;
+				else if (t[k].equals("NOPEAKS"))
+					st.peaks = false;
+				else if (t[k].equals("RIVER"))
+					st.river = true;
 				else if (t[k].equals("AUTO") || t[k].equals("CUSTOM"))
 					st.height = PlaceSettings.Height.valueOf(t[k]);
 				else

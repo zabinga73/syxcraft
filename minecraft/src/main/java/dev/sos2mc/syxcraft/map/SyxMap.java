@@ -234,6 +234,21 @@ public final class SyxMap {
 		return b > 0 && b < blueprints.length ? blueprints[b] : null;
 	}
 
+	private java.util.BitSet waterMask;
+
+	/** natural water tiles (lakes, rivers, the sea; bridges over them too), the input for river detection */
+	public java.util.BitSet waterMask() {
+		if (waterMask == null) {
+			waterMask = new java.util.BitSet(width * height);
+			for (int i = 0; i < width * height; i++) {
+				String t = terrainKey(i);
+				if (t != null && t.startsWith("WATER"))
+					waterMask.set(i);
+			}
+		}
+		return waterMask;
+	}
+
 	/** does this water-room tile hold water? (v1 exports don't say: assume it does) */
 	public boolean hasWater(int i) {
 		return water == null || (water[i] & 0xFF) > 1;
