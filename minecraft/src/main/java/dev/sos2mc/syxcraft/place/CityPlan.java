@@ -55,6 +55,8 @@ public final class CityPlan {
 	private int[] buildingDepth;
 	/** per region block: water in a farm, placed so every farmland block is within 4 of water in its own farm */
 	private java.util.BitSet farmWater;
+	/** peaks only: per tile, straight-line distance in tiles from a mountain tile to the nearest non-mountain tile */
+	private float[] mountainDist;
 	/** crops held back by write() until everything around them is placed */
 	private final it.unimi.dsi.fastutil.longs.LongArrayList cropPos = new it.unimi.dsi.fastutil.longs.LongArrayList();
 	private final java.util.ArrayList<BlockState> cropState = new java.util.ArrayList<>();
@@ -105,6 +107,8 @@ public final class CityPlan {
 		for (int i = 0; i < n; i++)
 			kind[i] = classify(map.terrainKey(i));
 		dist = distances();
+		if (st.peaks)
+			mountainDist = mountainDistances();
 		for (int ty = 0; ty < map.height; ty++)
 			for (int tx = 0; tx < map.width; tx++)
 				doorDir[map.idx(tx, ty)] = (byte) (kind[map.idx(tx, ty)] == DOOR ? outward(tx, ty) : -1);
@@ -190,7 +194,8 @@ public final class CityPlan {
 		int A = st.hills, V = st.valleys;
 		double target;
 		if (st.topography == PlaceSettings.Topography.LOCAL) {
-			target = Math.max(-V, Math.min(A, natural - B));
+			// peaks: natural mountains keep their full height (only the world's ceiling stops them)
+			target = Math.max(-V, st.peaks ? natural - B : Math.min(A, natural - B));
 		} else {
 			// rolling hills in tile space (same landscape at every scale), mostly rises with shallow hollows
 			double tx = bx / (double) s, tz = bz / (double) s;
@@ -201,6 +206,83 @@ public final class CityPlan {
 			target = Math.max(-V, Math.min(A, target));
 		}
 		return (int) Math.round(target * wgt);
+	}
+
+	/** peaks: world y from which mountain tops are snow (give or take a few blocks) */
+	static final int SNOW_LINE = 175;
+
+	/**
+	 * Height of a Songs of Syx mountain above the ground with peaks on. It rises with the straight-line distance from
+	 * the mountain's foot, a little less than linearly so broad ranges get high without walls, and ridged noise splits a
+	 * range into separate summits, shoulders and saddles. Near the top of the world it eases off instead of being cut
+	 * flat. The slope stays within about two blocks up per block across, so no spikes. dh = the topography's lift here;
+	 * returns the height above B.
+	 */
+	private int peakHeight(WorldWriter w, int bx, int bz, int dh, long h) {
+		double fx = (bx + 0.5) / s - 0.5 + tx0, fz = (bz + 0.5) / s - 0.5 + ty0;
+		int x0 = (int) Math.floor(fx), z0 = (int) Math.floor(fz);
+		double ax = fx - x0, az = fz - z0;
+		double d = (1 - az) * ((1 - ax) * md(x0, z0) + ax * md(x0 + 1, z0)) + az * ((1 - ax) * md(x0, z0 + 1) + ax * md(x0 + 1, z0 + 1));
+		double db = Math.max(0, d * s); // blocks in from the foot
+		double base = 3 + 1.6 * Math.pow(db, 0.9);
+		// summits and saddles along a range: ridged noise in tile space, so the same range at every scale
+		double r = 1 - Math.abs(noise(fx / 36.0, fz / 36.0, 5));
+		double f = 0.55 + 0.6 * r * r + 0.15 * noise(fx / 13.0, fz / 13.0, 6);
+		double mh = base * f + (h & 1);
+		// out of the land around it (topography): a smooth max, so the foot follows the land and the body the peak
+		mh = (dh + mh + Math.sqrt((dh - mh) * (dh - mh) + 64)) / 2;
+		// ease into the world's ceiling
+		double room = w.maxY() - B - 2, knee = 0.75 * room;
+		if (mh > knee)
+			mh = knee + (room - knee) * Math.tanh((mh - knee) / (room - knee));
+		return Math.max(3, (int) Math.round(mh));
+	}
+
+	private float md(int tx, int ty) {
+		tx = Math.max(0, Math.min(map.width - 1, tx));
+		ty = Math.max(0, Math.min(map.height - 1, ty));
+		return mountainDist[map.idx(tx, ty)];
+	}
+
+	/** straight-line-ish (chamfer 1 / sqrt 2) distance from each mountain tile to the nearest other tile, in tiles */
+	private float[] mountainDistances() {
+		int w = map.width, h = map.height;
+		float[] d = new float[w * h];
+		final float INF = 1e9f, D1 = 1f, D2 = (float) Math.sqrt(2);
+		// the edge of the placed area counts as a foot too, so a range cut off there slopes down to it, not a cliff
+		for (int i = 0; i < d.length; i++) {
+			int x = i % w, y = i / w;
+			d[i] = isMountain(kind[i]) && x > tx0 && x < tx1 && y > ty0 && y < ty1 ? INF : 0;
+		}
+		for (int y = 0; y < h; y++)
+			for (int x = 0; x < w; x++) {
+				int i = x + y * w;
+				if (d[i] == 0)
+					continue;
+				float v = d[i];
+				if (x > 0) v = Math.min(v, d[i - 1] + D1);
+				if (y > 0) v = Math.min(v, d[i - w] + D1);
+				if (x > 0 && y > 0) v = Math.min(v, d[i - w - 1] + D2);
+				if (x < w - 1 && y > 0) v = Math.min(v, d[i - w + 1] + D2);
+				d[i] = v;
+			}
+		for (int y = h - 1; y >= 0; y--)
+			for (int x = w - 1; x >= 0; x--) {
+				int i = x + y * w;
+				if (d[i] == 0)
+					continue;
+				float v = d[i];
+				if (x < w - 1) v = Math.min(v, d[i + 1] + D1);
+				if (y < h - 1) v = Math.min(v, d[i + w] + D1);
+				if (x < w - 1 && y < h - 1) v = Math.min(v, d[i + w + 1] + D2);
+				if (x > 0 && y < h - 1) v = Math.min(v, d[i + w - 1] + D2);
+				d[i] = v;
+			}
+		// a mountain running off the map edge has no foot there: the INF stays only for an all-mountain map
+		for (int i = 0; i < d.length; i++)
+			if (d[i] >= INF)
+				d[i] = 0;
+		return d;
 	}
 
 	/** smooth value noise in -1..1 */
@@ -659,11 +741,19 @@ public final class CityPlan {
 		final byte k = kind[i];
 		final long h = hash(X, Z);
 
-		BlockState[] col = new BlockState[BELOW + ABOVE];
+		// peaks can reach the top of the world, so their columns reach that far
+		BlockState[] col = new BlockState[BELOW + (st.peaks ? Math.max(ABOVE, w.maxY() - B + 1) : ABOVE)];
 		int top = B; // highest y this column builds up to
 
 		boolean terrain = st.has(PlaceSettings.TERRAIN);
 		boolean buildings = st.has(PlaceSettings.BUILDINGS);
+		// how far topography moves this column (applied in write())
+		int dh = 0;
+		if (terrain && st.topography != PlaceSettings.Topography.FLAT) {
+			dh = topoLift(bx, bz, st.topography == PlaceSettings.Topography.LOCAL ? w.naturalGround(X, Z) : B);
+			lift[bx + bz * bw] = dh;
+		}
+		int writeDh = dh; // a peak builds its own height from B instead
 
 		// ground surface and soil
 		BlockState surface = surfaceBlock(i, h);
@@ -685,9 +775,14 @@ public final class CityPlan {
 		case MOUNTAIN, CAVE -> {
 			if (terrain) {
 				int mh = Math.min(48, 3 + dist[i] * (s + 1) + (int) (h & 1));
+				if (st.peaks) {
+					// the mountain rises out of the land around it rather than sitting on top of it
+					mh = peakHeight(w, bx, bz, dh, h);
+					writeDh = 0;
+				}
 				for (int y = B; y <= B + mh; y++)
 					put(col, y, ore(i, h, y) ? oreBlock(map.mineralKey(i), hash(X + y * 7, Z)) : pal.get("mountain"));
-				put(col, B + mh, pal.get("mountainTop"));
+				put(col, B + mh, st.peaks && B + mh >= SNOW_LINE + (int) (h % 7) ? pal.get("mountainSnow") : pal.get("mountainTop"));
 				if (k == CAVE)
 					for (int y = B + 1; y <= B + H; y++)
 						put(col, y, Blocks.AIR.defaultBlockState());
@@ -819,16 +914,13 @@ public final class CityPlan {
 			top = Math.max(top, roof(col, bx, bz, i, h));
 
 		// topography: open land rides up or down as a whole column; the settlement itself stays at B
-		int dh = 0;
-		if (terrain && st.topography != PlaceSettings.Topography.FLAT) {
-			dh = topoLift(bx, bz, st.topography == PlaceSettings.Topography.LOCAL ? w.naturalGround(X, Z) : B);
-			lift[bx + bz * bw] = dh;
+		if (writeDh != 0) {
 			// a raised column is solid soil all the way down to where its ground used to be (no buried grass)
-			for (int y = B - 3; y > B - 3 - dh && y - B + BELOW >= 0; y--)
+			for (int y = B - 3; y > B - 3 - writeDh && y - B + BELOW >= 0; y--)
 				if (col[y - B + BELOW] == null)
 					put(col, y, pal.get("ground.subsoil"));
 		}
-		write(w, X, Z, col, top, dh);
+		write(w, X, Z, col, top, writeDh);
 	}
 
 	/**

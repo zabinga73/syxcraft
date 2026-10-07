@@ -188,7 +188,11 @@ public class SyxPlaceScreen extends Screen {
 		y += ROW;
 		addRenderableWidget(CycleButton.onOffBuilder(SyxcraftClient.showPreview)
 				.withTooltip(v -> Tooltip.create(Component.literal("Show the city's outline in the world with particles.")))
-				.create(right, y, colW, 20, Component.literal("Preview outline"), (b, v) -> SyxcraftClient.showPreview = v));
+				.create(right, y, colW / 2 - 2, 20, Component.literal("Preview"), (b, v) -> SyxcraftClient.showPreview = v));
+		addRenderableWidget(CycleButton.onOffBuilder(st.peaks)
+				.withTooltip(v -> Tooltip.create(Component.literal("Mountains ignore the Hills cap. The city's own mountains rise into real peaks with ridges, "
+						+ "saddles and snowy tops (as high as the world allows), and Local terrain keeps its mountains at their full height.")))
+				.create(right + colW / 2 + 2, y, colW / 2 - 2, 20, Component.literal("Peaks"), (b, v) -> st.peaks = v));
 
 		/* ---------------- bottom row ---------------- */
 		int by = height - 52;

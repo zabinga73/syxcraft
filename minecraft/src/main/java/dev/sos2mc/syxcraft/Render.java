@@ -40,6 +40,26 @@ final class Render {
 				img.setRGB(x, z, border ? 0xFF00FF : (r << 16) | (g << 8) | b);
 			}
 		ImageIO.write(img, "png", out.toFile());
+		// elevation next to it: brightness by height (city level dark, the world's top white), lit from the north-west
+		BufferedImage el = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+		int lo = j.plan.B - 16, hi = level.getMaxY();
+		for (int z = 0; z < h; z++)
+			for (int x = 0; x < w; x++) {
+				int y = top[x + z * w];
+				int nw = x > 0 && z > 0 ? top[x - 1 + (z - 1) * w] : y;
+				double v = Math.max(0, Math.min(1, (y - lo) / (double) (hi - lo)));
+				double light = Math.max(0.35, Math.min(1.4, 1 + 0.12 * (y - nw)));
+				int g = clamp((int) ((40 + 215 * v) * light));
+				el.setRGB(x, z, (g << 16) | (g << 8) | g);
+			}
+		String name = out.getFileName().toString();
+		// and the raw heights (little-endian: width, height, then one int per column) for 3D views
+		var bb = java.nio.ByteBuffer.allocate(8 + 4 * top.length).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+		bb.putInt(w).putInt(h);
+		for (int t : top)
+			bb.putInt(t);
+		java.nio.file.Files.write(out.resolveSibling(name.replace(".png", "-height.bin")), bb.array());
+		ImageIO.write(el, "png", out.resolveSibling(name.replace(".png", "-height.png")).toFile());
 	}
 
 	/** floor plan: what's at y = ground + dy over the whole placement, 3 px per block, air shows the floor dimmed */

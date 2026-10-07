@@ -2,6 +2,21 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.7.0
+Syxcraft:
+- New toggle, Peaks (placer screen, bottom right, or `/syx place ... <topography>+peaks`): mountains ignore the Hills
+  cap.
+  - The city's own Songs of Syx mountains rise into real peaks instead of stopping flat at 48 blocks. Height grows with
+    the distance from the mountain's foot, and ridged noise splits a range into summits, shoulders and saddles. Slopes
+    stay mountain-like (about one to two blocks up per block across), with no spikes. Near the top of the world
+    the peaks round off instead of being cut flat, and tops above y=175 are snow. On Loban, the biggest range would
+    reach about 70-90 blocks at scale 1 and 130-170 at scale 2.
+  - The mountains rise out of the land around them rather than being stacked on top of it, and a range cut off by
+    the edge of the placed area slopes down to the edge instead of ending in a cliff.
+  - Local terrain keeps natural mountains at their full height instead of cutting them off at the Hills value (the
+    flat-topped mesas). Valleys keep their limit.
+- `/syx render` also writes an elevation image (`syxcraft-render-height.png`) and the raw heights (`.bin`).
+
 ## 1.6.6
 Syxcraft:
 - Fix: farms no longer lose their crops. In Minecraft 26.x a crop needs light 8 or more to stay put (there's no "sees

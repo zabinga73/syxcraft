@@ -114,6 +114,7 @@ public final class Palette {
 		d("bridge", "minecraft:spruce_planks");
 		d("mountain", "minecraft:stone");
 		d("mountainTop", "minecraft:andesite");
+		d("mountainSnow", "minecraft:snow_block");
 		d("rock", "minecraft:cobblestone");
 		d("rockMoss", "minecraft:mossy_cobblestone");
 		d("log", "minecraft:oak_log");

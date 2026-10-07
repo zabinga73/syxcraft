@@ -74,6 +74,8 @@ public final class PlaceSettings {
 	public int hills = 16;
 	/** topography: the most open land may sink below the city level, in blocks */
 	public int valleys = 5;
+	/** mountains ignore the Hills cap: Songs of Syx mountains rise into real peaks, and local terrain keeps its height */
+	public boolean peaks = false;
 	/** most villagers the CITIZENS layer spawns; a big city is sampled evenly down to this (0 = everyone) */
 	public int citizenCap = 100;
 	/** each building's wooden roof in a random wood instead of its material's */
@@ -112,6 +114,7 @@ public final class PlaceSettings {
 		s.topography = topography;
 		s.hills = hills;
 		s.valleys = valleys;
+		s.peaks = peaks;
 		s.citizenCap = citizenCap;
 		s.roofWoods = roofWoods;
 		s.heightVariety = heightVariety;
@@ -142,6 +145,7 @@ public final class PlaceSettings {
 		b.writeVarInt(citizenCap);
 		b.writeBoolean(roofWoods);
 		b.writeVarInt(heightVariety);
+		b.writeBoolean(peaks);
 	}
 
 	public static PlaceSettings read(FriendlyByteBuf b) {
@@ -165,6 +169,7 @@ public final class PlaceSettings {
 		s.citizenCap = Math.max(0, Math.min(100000, b.readVarInt()));
 		s.roofWoods = b.readBoolean();
 		s.heightVariety = Math.max(0, Math.min(64, b.readVarInt()));
+		s.peaks = b.readBoolean();
 		return s;
 	}
 }
