@@ -54,7 +54,8 @@ public final class PlacementJob {
 		this.plan = new CityPlan(map, st, pal, centreX, centreZ);
 		this.w = new WorldWriter(level);
 		this.chat = chat;
-		int margin = st.has(PlaceSettings.BLEND_EDGES) ? plan.blendWidth() : 0;
+		// River lineup smooths the riverbed a little way past the blend ring too, into the untouched river
+		int margin = st.has(PlaceSettings.BLEND_EDGES) ? plan.blendWidth() + (st.river ? BED_FADE : 0) : 0;
 		cx0 = Math.floorDiv(plan.X0 - margin, 16);
 		cz0 = Math.floorDiv(plan.Z0 - margin, 16);
 		int cx1 = Math.floorDiv(plan.X0 + plan.bw - 1 + margin, 16), cz1 = Math.floorDiv(plan.Z0 + plan.bh - 1 + margin, 16);
@@ -226,10 +227,14 @@ public final class PlacementJob {
 
 	/** per footprint column: 0 land, 1 water whose bed may move, 2 water that stays (bridges); and its depth */
 	private byte[] bedKind;
-	private byte[] bedDepth, bedNew;
+	private short[] bedDepth, bedNew;
 	private boolean bedSmoothed;
 	/** how far the riverbed is averaged, in blocks: the wider, the gentler */
 	static final int BED_RADIUS = 6;
+	/** how far past the blend ring the riverbed fades back to the untouched river's own bed */
+	static final int BED_FADE = 16;
+	/** deepest water the riverbed pass measures */
+	static final int MAX_DEPTH = 96;
 
 	private int footIdx(int x, int z) {
 		return (x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16;
@@ -240,7 +245,7 @@ public final class PlacementJob {
 		int cx = cx0 + c % chunksX, cz = cz0 + c / chunksX, top = plan.B - 1;
 		if (bedKind == null) {
 			bedKind = new byte[chunksX * 16 * chunksZ * 16];
-			bedDepth = new byte[bedKind.length];
+			bedDepth = new short[bedKind.length];
 		}
 		w.freezeFluids(cx, cz);
 		for (int z = cz * 16; z < cz * 16 + 16; z++)
@@ -251,26 +256,31 @@ public final class PlacementJob {
 					bedKind[i] = (byte) k;
 					if (k != 0) {
 						int d = 0;
-						while (d < 24 && w.get(x, top - d - 1, z).getFluidState().is(net.minecraft.tags.FluidTags.WATER))
+						// deep lakes too: a depth cut short here would lay the new bed over open water, and its sand falls
+						while (d < MAX_DEPTH && w.get(x, top - d - 1, z).getFluidState().is(net.minecraft.tags.FluidTags.WATER))
 							d++;
-						bedDepth[i] = (byte) (d + 1); // the surface block counts
+						bedDepth[i] = (short) (d + 1); // the surface block counts
 					}
 					continue;
 				}
-				if (bedKind[i] != 1 || bedNew[i] == bedDepth[i])
+				if (bedKind[i] != 1)
 					continue;
 				int od = bedDepth[i], nd = bedNew[i];
 				if (nd > od) {
-					// deeper: the old bed becomes water, on a bed of sand where there's nothing solid
+					// deeper: the old bed becomes water, on a bed of sand where there's nothing solid (below)
 					for (int y = top - nd + 1; y <= top - od; y++)
 						w.set(x, y, z, plan.pal.get("water"));
-					if (WorldWriter.soft(w.get(x, top - nd, z)))
-						w.set(x, top - nd, z, Blocks.SAND.defaultBlockState());
-				} else {
-					// shallower: fill up with sand
+				} else if (nd < od) {
+					// shallower: fill up with sand, on solid ground (the old bed can be an air pocket the frozen water
+					// never flowed into)
+					plan.fillUnder(w, x, top - od + 1, z);
 					for (int y = top - od + 1; y <= top - nd; y++)
 						w.set(x, y, z, Blocks.SAND.defaultBlockState());
 				}
+				if (WorldWriter.soft(w.get(x, top - nd, z)))
+					w.set(x, top - nd, z, Blocks.SAND.defaultBlockState());
+				// whatever is under the new bed (a deeper lake, a cave) becomes ground, so the sand stays put
+				plan.fillUnder(w, x, top - nd, z);
 			}
 	}
 
@@ -283,22 +293,26 @@ public final class PlacementJob {
 		int W = chunksX * 16, H = chunksZ * 16;
 		float[] d = new float[W * H], t = new float[W * H];
 		for (int i = 0; i < d.length; i++)
-			d[i] = bedKind[i] == 0 ? 0 : bedDepth[i];
+			d[i] = bedKind[i] == 0 ? 0 : Math.min(bedDepth[i], 24); // a cave under the bed shouldn't drag the river down
 		for (int pass = 0; pass < 2; pass++) {
 			blur(d, t, W, H, BED_RADIUS, true);
 			blur(t, d, W, H, BED_RADIUS, false);
 		}
-		bedNew = new byte[d.length];
+		bedNew = new short[d.length];
 		int changed = 0;
 		for (int i = 0; i < d.length; i++) {
 			if (bedKind[i] != 1)
 				continue;
-			// out in the ring, fade back to the bed that was there, so it meets the untouched river beyond
+			// past the ring, fade back to the bed that was there, so the channel ramps into the untouched river's
+			// bed beyond instead of ending at a wall (the funnels are dug right up to the ring's edge)
 			int x = cx0 * 16 + i % W - plan.X0, z = cz0 * 16 + i / W - plan.Z0;
-			int ring = Math.max(Math.max(-x, x - plan.bw + 1), Math.max(-z, z - plan.bh + 1)), half = plan.blendWidth() / 2;
-			double f = ring <= half ? 0 : Math.min(1, (ring - half) / (double) half);
+			int ring = Math.max(Math.max(-x, x - plan.bw + 1), Math.max(-z, z - plan.bh + 1)), bw = plan.blendWidth();
+			double f = ring <= bw ? 0 : Math.min(1, (ring - bw) / (double) BED_FADE);
 			f = f * f * (3 - 2 * f);
-			bedNew[i] = (byte) Math.max(1, Math.min(14, Math.round(d[i] * (1 - f) + bedDepth[i] * f)));
+			// the city's beds go no deeper than 14, but past the ring deeper Minecraft water keeps its
+			// depth, or the bed would stop at a wall where the untouched lake or sea goes on
+			int deepest = Math.max(14, (int) Math.round(bedDepth[i] * f));
+			bedNew[i] = (short) Math.max(1, Math.min(deepest, Math.round(d[i] * (1 - f) + bedDepth[i] * f)));
 			if (bedNew[i] != bedDepth[i])
 				changed++;
 		}

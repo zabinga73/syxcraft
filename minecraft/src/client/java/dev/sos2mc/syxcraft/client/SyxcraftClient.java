@@ -46,6 +46,14 @@ public class SyxcraftClient implements ClientModInitializer {
 				s.onInfo();
 		});
 		ClientPlayNetworking.registerGlobalReceiver(SyxNet.Progress.TYPE, (p, ctx) -> progress = p);
+		ClientPlayNetworking.registerGlobalReceiver(SyxNet.OpenPlacer.TYPE, (p, ctx) -> {
+			// Regenerate city: same settings, centred where the last city went (with River lineup: no new search)
+			settings.origin = PlaceSettings.Origin.COORDS;
+			settings.x = p.x();
+			settings.z = p.z();
+			settings.keepSpot = settings.river;
+			ctx.client().gui.setScreen(new SyxPlaceScreen());
+		});
 
 		ClientTickEvents.END_CLIENT_TICK.register(mc -> {
 			while (openKey.consumeClick())

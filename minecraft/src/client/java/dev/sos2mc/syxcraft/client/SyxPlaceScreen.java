@@ -113,11 +113,19 @@ public class SyxPlaceScreen extends Screen {
 				.withTooltip(o -> Tooltip.create(Component.literal(st.river ? "With River lineup this is where the search for a river starts." : "Where the city's centre goes.")))
 				.create(left, y, colW, 20, Component.literal("Position"), (b, v) -> {
 					st.origin = v;
+					st.keepSpot = false;
 					rebuildWidgets();
 				}));
 		y += ROW;
-		xBox = numberBox(left, y, colW / 2 - 2, "X", st.origin == PlaceSettings.Origin.PLAYER ? playerX() : st.x, v -> st.x = v);
-		zBox = numberBox(left + colW / 2 + 2, y, colW / 2 - 2, "Z", st.origin == PlaceSettings.Origin.PLAYER ? playerZ() : st.z, v -> st.z = v);
+		// a new position is a new spot: a regenerated River lineup city searches again
+		xBox = numberBox(left, y, colW / 2 - 2, "X", st.origin == PlaceSettings.Origin.PLAYER ? playerX() : st.x, v -> {
+			st.keepSpot &= v == st.x;
+			st.x = v;
+		});
+		zBox = numberBox(left + colW / 2 + 2, y, colW / 2 - 2, "Z", st.origin == PlaceSettings.Origin.PLAYER ? playerZ() : st.z, v -> {
+			st.keepSpot &= v == st.z;
+			st.z = v;
+		});
 		xBox.setEditable(st.origin == PlaceSettings.Origin.COORDS);
 		zBox.setEditable(st.origin == PlaceSettings.Origin.COORDS);
 		y += ROW;
@@ -166,6 +174,7 @@ public class SyxPlaceScreen extends Screen {
 						+ "The mark shows whether a river leaves this area of the map: Whole map or a bigger margin can find one.")))
 				.create(right, y, colW - 18, 20, Component.literal("River lineup"), (b, v) -> {
 					st.river = v;
+					st.keepSpot = false;
 					rebuildWidgets();
 				}));
 		riverY = y;
@@ -213,6 +222,13 @@ public class SyxPlaceScreen extends Screen {
 		y += ROW;
 		toggle(left, y, colW / 2 - 2, "Furniture", PlaceSettings.FURNITURE, "Tables, workshops, storage barrels, shrines...");
 		toggle(left + colW / 2 + 2, y, colW / 2 - 2, "Quarries", PlaceSettings.QUARRIES, "Dig mines and clay pits as quarries with a ladder.");
+		y += ROW;
+		toggle(left, y, colW / 2 - 2, "Cave torches", PlaceSettings.CAVE_TORCHES, "Light up the mountain caves in the city with torches on the floor.");
+		addRenderableWidget(CycleButton.builder((Integer h) -> Component.literal(h == 0 ? "auto" : String.valueOf(h)), st.caveHeight)
+				.withValues(0, 3, 4, 5, 6, 8, 10, 12, 16, 24)
+				.withTooltip(h -> Tooltip.create(Component.literal("How high mountain caves are inside, in blocks. Auto = the same as the buildings' walls. "
+						+ "A low mountain grows to keep a roof over a tall cave.")))
+				.create(left + colW / 2 + 2, y, colW / 2 - 2, 20, Component.literal("Caves"), (b, v) -> st.caveHeight = v));
 
 		/* right column: building style and extras */
 		y = y0;
@@ -333,14 +349,15 @@ public class SyxPlaceScreen extends Screen {
 		int cz = st.origin == PlaceSettings.Origin.COORDS ? st.z : playerZ();
 		int x0 = cx - bw / 2, z0 = cz - bh / 2;
 		int y = st.height == PlaceSettings.Height.CUSTOM ? st.y
-				: st.height == PlaceSettings.Height.SEA_LEVEL && SyxcraftClient.files != null ? SyxcraftClient.files.seaLevel()
+				: (st.height == PlaceSettings.Height.SEA_LEVEL || st.river) && SyxcraftClient.files != null ? SyxcraftClient.files.seaLevel()
 						: (minecraft.player == null ? 64 : minecraft.player.getBlockY() - 1);
 		return new int[] { x0, z0, x0 + bw - 1, z0 + bh - 1, y };
 	}
 
 	private void updatePreview() {
 		// with River lineup the city moves, so the outline at the start spot would be misleading
-		SyxcraftClient.preview = st.river ? null : footprint();
+		// (unless it's going back where it was)
+		SyxcraftClient.preview = st.river && !st.keepSpot ? null : footprint();
 	}
 
 	/** does a river leave the chosen area of the map? (cached per file, area and margin) */
@@ -398,12 +415,16 @@ public class SyxPlaceScreen extends Screen {
 		}
 
 		int[] f = footprint();
-		if (st.river) {
+		if (st.river && st.keepSpot) {
+			g.centeredText(font, String.format("River lineup: regenerating at x=%d z=%d as before (no new search)", st.x, st.z),
+					width / 2, height - 64, 0xFFA0E0FF);
+		} else if (st.river) {
 			g.centeredText(font, "River lineup: moves to the best Minecraft river within 2048 blocks",
 					width / 2, height - 64, 0xFFA0E0FF);
-		} else if (f != null) {
+		}
+		if ((!st.river || st.keepSpot) && f != null) {
 			String fp = String.format("Footprint %d x %d blocks: x %d..%d, z %d..%d", f[2] - f[0] + 1, f[3] - f[1] + 1, f[0], f[2], f[1], f[3]);
-			g.centeredText(font, fp, width / 2, height - 64, 0xFFE0E0A0);
+			g.centeredText(font, fp, width / 2, st.river ? height - 76 : height - 64, 0xFFE0E0A0);
 		}
 
 		SyxNet.Progress p = SyxcraftClient.progress;

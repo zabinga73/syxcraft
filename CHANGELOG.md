@@ -2,6 +2,24 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.2
+Syxcraft:
+- River lineup: no more cliffs and holes in the riverbed where the city's river runs into the Minecraft one.
+  - The riverbed smoothing now carries on 16 blocks past the blend ring and fades back to the Minecraft river's own bed
+    there, so the dug channel ramps into the neighbouring riverbed instead of ending at an underwater wall. Deeper
+    Minecraft water out there keeps its depth (the 14-block cap is only for the city's own river).
+  - Riverbeds no longer collapse into holes. Under lakes, world generation leaves sand and gravel hanging over flooded
+    caves and air pockets, and the new bed's sand fell through them; everything under a new bed (and under each funnel)
+    is now filled down to solid ground, and deep lakes are measured to the bottom.
+- [Regenerate city] link in chat when a city is done: opens the placer with X/Z at that city's centre (with River
+  lineup: the same spot without a new river search), with a note that Local terrain probably won't work on a
+  regeneration.
+- Cave height setting (What to build page): how high mountain caves are inside, 3 to 24 blocks or auto (the wall
+  height). A low mountain grows enough to keep a roof over a tall cave.
+- Cave torches toggle: lights the city's mountain caves with floor torches, placed so no spot in a cave is more than
+  about 6 blocks of tunnel from one (narrow winding tunnels too), outside rooms.
+- `/syx place` options: `keep` (River lineup at x/z without searching), `cave<height>`, `torches`, `m<margin>`, `whole`.
+
 ## 1.8.1
 Syxcraft:
 - River lineup: smooth riverbeds. After blending, every water column of the city and the blend ring gets its depth

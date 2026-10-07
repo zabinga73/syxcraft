@@ -49,6 +49,8 @@ public final class SyxServer {
 	private static Consumer<RiverFinder.Result> riverStart;
 	/** where a River lineup placement went, for the teleport link once it's done */
 	private static int[] riverCentre;
+	/** the running placement's centre, for the Regenerate city link once it's done */
+	private static int[] jobCentre;
 	/** the most recent job, kept for /syx render */
 	static PlacementJob last;
 
@@ -139,6 +141,18 @@ public final class SyxServer {
 			}
 			st.height = PlaceSettings.Height.SEA_LEVEL;
 			owner = who;
+			if (st.keepSpot) {
+				// regenerating: the city goes back where it was lined up last time, no new search
+				chat.accept(String.format("Syx: River lineup at x=%d z=%d as before (no new river search).", cx, cz));
+				job = new PlacementJob(level, map, st, Palette.load(), cx, cz, msg -> {
+					chat.accept(msg);
+					Syxcraft.LOG.info(msg);
+				});
+				job.rivers = exits;
+				riverCentre = new int[] { cx, cz };
+				jobCentre = riverCentre;
+				return true;
+			}
 			chat.accept(String.format("Syx: looking for a Minecraft river within %d blocks to line up with (%d river exits)...",
 					RiverFinder.RADIUS, exits.size()));
 			riverSearch = CompletableFuture.supplyAsync(() -> RiverFinder.find(level, map.waterMask(), map.width, region, exits, cx, cz));
@@ -156,6 +170,7 @@ public final class SyxServer {
 				});
 				job.rivers = exits;
 				riverCentre = new int[] { r.x(), r.z() };
+				jobCentre = riverCentre;
 			};
 			return true;
 		}
@@ -164,6 +179,7 @@ public final class SyxServer {
 			Syxcraft.LOG.info(msg);
 		});
 		owner = who;
+		jobCentre = new int[] { cx, cz };
 		return true;
 	}
 
@@ -225,6 +241,21 @@ public final class SyxServer {
 			}
 			riverCentre = null;
 		}
+		if (was && !job.running() && jobCentre != null) {
+			// offer to place it again in the same spot (opens the placer screen with the centre filled in)
+			ServerPlayer pl = server.getPlayerList().getPlayer(owner);
+			if (pl != null && job.stage == PlacementJob.Stage.DONE) {
+				String cmd = "/syx regen " + jobCentre[0] + " " + jobCentre[1];
+				pl.sendSystemMessage(Component.literal("Syx: ")
+						.append(Component.literal("[Regenerate city]").withStyle(st -> st.withColor(net.minecraft.ChatFormatting.GOLD)
+								.withUnderlined(true).withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand(cmd))
+								.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+										Component.literal("Opens the placer with the centre at x=" + jobCentre[0] + " z=" + jobCentre[1])))))
+						.append(Component.literal("\nLocal terrain mode probably won't work on regenerations")
+								.withStyle(net.minecraft.ChatFormatting.GRAY, net.minecraft.ChatFormatting.ITALIC)));
+			}
+			jobCentre = null;
+		}
 		if (!job.running() && ticks % 10 == 0)
 			job = null;
 	}
@@ -243,6 +274,19 @@ public final class SyxServer {
 									int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
 									c.getSource().getServer().getCommands().performPrefixedCommand(c.getSource(),
 											"tp @s " + x + " " + y + " " + z);
+									return 1;
+								}))))
+				.then(Commands.literal("regen")
+						.then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("z", IntegerArgumentType.integer())
+								.executes(c -> {
+									// the chat link after a placement: open the player's placer screen centred on x/z
+									ServerPlayer pl = c.getSource().getPlayer();
+									if (pl == null || !ServerPlayNetworking.canSend(pl, SyxNet.OpenPlacer.TYPE)) {
+										c.getSource().sendSystemMessage(Component.literal("Syx: regen needs Syxcraft on the client."));
+										return 0;
+									}
+									ServerPlayNetworking.send(pl, new SyxNet.OpenPlacer(IntegerArgumentType.getInteger(c, "x"),
+											IntegerArgumentType.getInteger(c, "z")));
 									return 1;
 								}))))
 				.then(Commands.literal("rivers").then(Commands.argument("file", StringArgumentType.string()).executes(c -> {
@@ -376,7 +420,8 @@ public final class SyxServer {
 		st.scale = scale;
 		try {
 			// "local", "local+sea", "flat+domed+sea": topography, then optionally a ground height mode (auto | sea |
-			// custom), a roof style (hipped | pointed | domed | flat | mixed), "citizens", "peaks"/"nopeaks" and "river", in any order
+			// custom), a roof style (hipped | pointed | domed | flat | mixed), "citizens", "peaks"/"nopeaks", "river", "keep"
+			// (River lineup at x/z, no search), "torches", "cave<height>", "m<margin>" and "whole", in any order
 			String[] t = StringArgumentType.getString(c, "topography").toUpperCase().split("\\+");
 			for (int k = 1; k < t.length; k++) {
 				if (t[k].startsWith("SEA"))
@@ -389,6 +434,16 @@ public final class SyxServer {
 					st.peaks = false;
 				else if (t[k].equals("RIVER"))
 					st.river = true;
+				else if (t[k].equals("KEEP"))
+					st.keepSpot = true;
+				else if (t[k].equals("TORCHES"))
+					st.set(PlaceSettings.CAVE_TORCHES, true);
+				else if (t[k].startsWith("CAVE"))
+					st.caveHeight = Integer.parseInt(t[k].substring(4));
+				else if (t[k].startsWith("M") && t[k].length() > 1 && Character.isDigit(t[k].charAt(1)))
+					st.margin = Integer.parseInt(t[k].substring(1));
+				else if (t[k].equals("WHOLE"))
+					st.area = PlaceSettings.Area.WHOLE_MAP;
 				else if (t[k].equals("AUTO") || t[k].equals("CUSTOM"))
 					st.height = PlaceSettings.Height.valueOf(t[k]);
 				else

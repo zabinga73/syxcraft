@@ -52,7 +52,7 @@ public final class PlaceSettings {
 	// layer toggles
 	public static final int TERRAIN = 1, CLEAR_ABOVE = 2, FILL_BELOW = 4, VEGETATION = 8, BUILDINGS = 16, ROOFS = 32,
 			FURNITURE = 64, QUARRIES = 128, BLEND_EDGES = 256, WATER = 512,
-			CITIZENS = 1024;
+			CITIZENS = 1024, CAVE_TORCHES = 2048;
 	public static final int ALL_LAYERS = TERRAIN | CLEAR_ABOVE | FILL_BELOW | VEGETATION | BUILDINGS | ROOFS | FURNITURE
 			| QUARRIES | BLEND_EDGES | WATER;
 
@@ -80,6 +80,10 @@ public final class PlaceSettings {
 	public boolean river = false;
 	/** most villagers the CITIZENS layer spawns; a big city is sampled evenly down to this (0 = everyone) */
 	public int citizenCap = 100;
+	/** clear height of mountain caves in blocks (0 = automatic: the buildings' interior height) */
+	public int caveHeight = 0;
+	/** River lineup: place at x/z as given instead of searching for a river (regenerating a city where it was) */
+	public boolean keepSpot = false;
 	/** each building's wooden roof in a random wood instead of its material's */
 	public boolean roofWoods = false;
 	/** most extra wall height a building may get, in blocks at scale 2 (scaled with the scale; 0 = all the same) */
@@ -96,6 +100,10 @@ public final class PlaceSettings {
 	/** the most extra height a building gets at this scale */
 	public int maxExtraHeight() {
 		return (int) Math.round(heightVariety * scale / 2.0);
+	}
+
+	public int caveClearance() {
+		return caveHeight > 0 ? caveHeight : interiorHeight();
 	}
 
 	public int interiorHeight() {
@@ -125,6 +133,8 @@ public final class PlaceSettings {
 		s.quarryDepth = quarryDepth;
 		s.wallHeight = wallHeight;
 		s.roof = roof;
+		s.caveHeight = caveHeight;
+		s.keepSpot = keepSpot;
 		return s;
 	}
 
@@ -150,6 +160,8 @@ public final class PlaceSettings {
 		b.writeVarInt(heightVariety);
 		b.writeBoolean(peaks);
 		b.writeBoolean(river);
+		b.writeVarInt(caveHeight);
+		b.writeBoolean(keepSpot);
 	}
 
 	public static PlaceSettings read(FriendlyByteBuf b) {
@@ -175,6 +187,8 @@ public final class PlaceSettings {
 		s.heightVariety = Math.max(0, Math.min(64, b.readVarInt()));
 		s.peaks = b.readBoolean();
 		s.river = b.readBoolean();
+		s.caveHeight = Math.max(0, Math.min(64, b.readVarInt()));
+		s.keepSpot = b.readBoolean();
 		return s;
 	}
 }

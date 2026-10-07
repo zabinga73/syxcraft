@@ -38,10 +38,14 @@ To uninstall, delete the files. Placed cities stay in the world.
     **Hills** caps how high land may rise, **Valleys** how deep it may sink (default 5).
   - **Layers:** terrain, water, clear above, fill below, plants, blend edges, buildings, roofs, furniture, quarries.
   - **Roof style, wall height, quarry depth** (quarries and mass graves).
+  - **Caves:** how high mountain caves are inside (auto = the wall height), and **Cave torches** to light them.
   - **Citizens** (experimental, off by default): the city's people as named villagers with professions from their
     jobs, capped at 25–400 (a big city is sampled evenly).
   - **Preview outline:** particles around the footprint. The footprint size and coordinates are shown on the screen.
   - **Place city / Cancel placement.** A progress bar shows each stage.
+  - When a city is done, chat offers **[Regenerate city]**: it opens the screen again with X/Z set to that city's
+    centre, so it can be placed again in the same spot (Local terrain probably won't work then, since the land it
+    would follow is the city's own).
 - Commands:
   - `/syx list`
   - `/syx place "<file>.syxmap" [scale] [at <x> <z> [flat|random|local] [hills] [valleys]]`

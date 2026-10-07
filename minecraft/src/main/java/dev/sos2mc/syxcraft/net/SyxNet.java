@@ -149,6 +149,21 @@ public final class SyxNet {
 		}
 	}
 
+	/** server tells the client to open the placer centred on x/z (the Regenerate city link) */
+	public record OpenPlacer(int x, int z) implements CustomPacketPayload {
+		public static final Type<OpenPlacer> TYPE = id("open_placer");
+		public static final StreamCodec<RegistryFriendlyByteBuf, OpenPlacer> CODEC = CustomPacketPayload.codec(
+				(OpenPlacer o, RegistryFriendlyByteBuf b) -> {
+					b.writeInt(o.x);
+					b.writeInt(o.z);
+				}, b -> new OpenPlacer(b.readInt(), b.readInt()));
+
+		@Override
+		public Type<? extends CustomPacketPayload> type() {
+			return TYPE;
+		}
+	}
+
 	private static String nn(String s) {
 		return s == null ? "" : s;
 	}
@@ -161,6 +176,7 @@ public final class SyxNet {
 		PayloadTypeRegistry.clientboundPlay().registerLarge(FileList.TYPE, FileList.CODEC, 1 << 20);
 		PayloadTypeRegistry.clientboundPlay().registerLarge(MapInfo.TYPE, MapInfo.CODEC, 1 << 21);
 		PayloadTypeRegistry.clientboundPlay().register(Progress.TYPE, Progress.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(OpenPlacer.TYPE, OpenPlacer.CODEC);
 	}
 
 	@SuppressWarnings("unused")

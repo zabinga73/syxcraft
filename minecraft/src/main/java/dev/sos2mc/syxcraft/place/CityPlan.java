@@ -780,12 +780,19 @@ public final class CityPlan {
 					mh = peakHeight(w, bx, bz, dh, h);
 					writeDh = 0;
 				}
+				int caveH = st.caveClearance();
+				if (k == CAVE)
+					mh = Math.max(mh, caveH + 2); // keep a roof over a tall cave
 				for (int y = B; y <= B + mh; y++)
 					put(col, y, ore(i, h, y) ? oreBlock(map.mineralKey(i), hash(X + y * 7, Z)) : pal.get("mountain"));
 				put(col, B + mh, st.peaks && B + mh >= SNOW_LINE + (int) (h % 7) ? pal.get("mountainSnow") : pal.get("mountainTop"));
-				if (k == CAVE)
-					for (int y = B + 1; y <= B + H; y++)
+				if (k == CAVE) {
+					for (int y = B + 1; y <= B + caveH; y++)
 						put(col, y, Blocks.AIR.defaultBlockState());
+					// lit caves: floor torches, so every bit of cave is lit (see caveTorches)
+					if (st.has(PlaceSettings.CAVE_TORCHES) && u == 0 && v == 0 && caveTorches().get(i))
+						put(col, B + 1, Blocks.TORCH.defaultBlockState());
+				}
 				top = B + mh;
 			}
 		}
@@ -1644,11 +1651,78 @@ public final class CityPlan {
 			for (int y = B - depth; y <= B - 1; y++)
 				w.set(X, y, Z, pal.get("water"));
 			w.set(X, B - depth - 1, Z, Blocks.SAND.defaultBlockState());
-			for (int y = B - depth - 2; y > B - depth - 10 && WorldWriter.soft(w.get(X, y, Z)); y--)
-				w.set(X, y, Z, pal.get("ground.subsoil"));
+			fillUnder(w, X, B - depth - 1, Z);
 			return B - 1;
 		}
 		return Integer.MIN_VALUE;
+	}
+
+	/**
+	 * Fill water, air and plants under a riverbed block at y down to solid ground, so its sand can't fall into a deeper
+	 * lake or cave below and leave a hole in the bed. Loose sand and gravel don't count as solid: world generation leaves
+	 * them hanging over flooded caves under lakes, and they drop the moment a block next to them changes.
+	 */
+	void fillUnder(WorldWriter w, int X, int y, int Z) {
+		int lim = Math.max(w.minY(), y - 96), yy = y - 1;
+		while (yy > lim && w.get(X, yy, Z).getBlock() instanceof net.minecraft.world.level.block.FallingBlock)
+			yy--;
+		for (; yy > lim && WorldWriter.soft(w.get(X, yy, Z)); yy--)
+			w.set(X, yy, Z, pal.get("ground.subsoil"));
+	}
+
+	/** cave torches: a grid 12 apart plus the centres of its squares */
+	static boolean torchSpot(int X, int Z) {
+		int a = Math.floorMod(X, 12), b = Math.floorMod(Z, 12);
+		return (a == 0 && b == 0) || (a == 6 && b == 6);
+	}
+
+	private java.util.BitSet caveTorches;
+
+	/**
+	 * Which cave tiles (outside rooms) get a torch. Grid spots first, then a torch on any cave tile still more than about
+	 * 6 blocks from one, walking through the cave, so narrow winding tunnels are lit as well as broad halls (a torch
+	 * lights 14, so the darkest spot stays at 7 or more and nothing spawns).
+	 */
+	private java.util.BitSet caveTorches() {
+		if (caveTorches != null)
+			return caveTorches;
+		java.util.BitSet torch = new java.util.BitSet(map.width * map.height);
+		int r = Math.max(1, 6 / s); // reach in tiles
+		int[] dist = new int[map.width * map.height];
+		java.util.Arrays.fill(dist, Integer.MAX_VALUE);
+		List<Integer> grid = new ArrayList<>(), rest = new ArrayList<>();
+		for (int ty = ty0; ty <= ty1; ty++)
+			for (int tx = tx0; tx <= tx1; tx++) {
+				int i = map.idx(tx, ty);
+				if (kind[i] != CAVE || map.roomId(i) != 0)
+					continue;
+				(torchSpot(X0 + (tx - tx0) * s, Z0 + (ty - ty0) * s) ? grid : rest).add(i);
+			}
+		grid.addAll(rest);
+		java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+		for (int i : grid) {
+			if (dist[i] <= r)
+				continue;
+			torch.set(i);
+			dist[i] = 0;
+			q.add(i);
+			while (!q.isEmpty()) {
+				int c = q.poll(), cx = c % map.width, cy = c / map.width;
+				if (dist[c] >= r)
+					continue;
+				for (int[] d : new int[][] { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) {
+					int nx = cx + d[0], ny = cy + d[1];
+					if (nx < tx0 || ny < ty0 || nx > tx1 || ny > ty1)
+						continue;
+					int n = map.idx(nx, ny);
+					if (kind[n] == CAVE && dist[n] > dist[c] + 1) {
+						dist[n] = dist[c] + 1;
+						q.add(n);
+					}
+				}
+			}
+		}
+		return caveTorches = torch;
 	}
 
 	static long hash(int x, int z) {
