@@ -1475,20 +1475,42 @@ public final class CityPlan {
 
 	/**
 	 * gentle ramp between the flattened city and the natural terrain around it; returns the column's new ground y,
-	 * or Integer.MAX_VALUE where it was left alone (seas and rivers)
+	 * Integer.MAX_VALUE where water was left (seas, rivers and the sea off a coast) or Integer.MIN_VALUE where the
+	 * column is too far out to blend (unsquare edges)
 	 */
 	int blendColumn(WorldWriter w, int X, int Z, int ring, int width) {
-		int river = funnelColumn(w, X, Z, width);
-		if (river != Integer.MIN_VALUE)
-			return river;
-		final int B = groundY(X - X0, Z - Z0); // the nearest edge column of the city, after topography
+		int bx = X - X0, bz = Z - Z0;
+		if (bx < 0 || bz < 0 || bx >= bw || bz >= bh) {
+			int river = funnelColumn(w, X, Z, width);
+			if (river != Integer.MIN_VALUE)
+				return river;
+		}
+		if (ring > width)
+			return Integer.MIN_VALUE;
+		// the city column this ramps away from: the nearest one of its shape (unsquare), or straight in from the edge
+		int sx = Math.max(0, Math.min(bw - 1, bx)), sz = Math.max(0, Math.min(bh - 1, bz));
+		if (shapeSrc != null) {
+			int src = shapeSrc[shapeIdx(X, Z)];
+			sx = src % bw;
+			sz = src / bw;
+		}
+		final int ground = groundY(sx, sz); // after topography
 		int top = w.groundTop(X, Z), nat = w.solidGround(X, Z);
-		// water at about city level is a sea, river or lake: leave it alone. Water higher up (a mountain pool, spring
-		// or fall) is cut down with the land under it.
-		if (top > nat && !w.get(X, top, Z).getFluidState().isEmpty() && top <= Math.max(B, w.level.getSeaLevel()) + 1)
-			return Integer.MAX_VALUE;
+		// a mountain at the edge ramps down from its own slopes rather than ending in a sheer face over the ground
+		byte sk = kind[map.idx(tileOfBlockX(sx), tileOfBlockZ(sz))];
+		int built = builtTop[sx + sz * bw];
+		final int B = isMountain(sk) && built != Integer.MIN_VALUE && st.has(PlaceSettings.TERRAIN) ? built : ground;
+		// water at about city level is a sea, river or lake: the city's own water just runs into it, and its land ends
+		// in a coast. Water higher up (a mountain pool, spring or fall) is cut down with the land under it.
+		if (top > nat && !w.get(X, top, Z).getFluidState().isEmpty() && top <= Math.max(ground, w.level.getSeaLevel()) + 1) {
+			if (!st.has(PlaceSettings.TERRAIN) || isWater(sk))
+				return Integer.MAX_VALUE;
+			return coast(w, X, Z, ring, width, B, top, nat);
+		}
 		BlockState natTopState = w.get(X, nat, Z);
+		// eased at both ends, so the ramp leaves the city and meets the land without a crease
 		double t = ring / (double) (width + 1);
+		t = t * t * (3 - 2 * t);
 		int target = (int) Math.round(B + (nat - B) * t);
 		if (target == nat)
 			return Integer.MAX_VALUE; // unchanged: nothing to sweep either
@@ -1505,6 +1527,172 @@ public final class CityPlan {
 		return target;
 	}
 
+	/**
+	 * Where the city's land meets Minecraft sea or lake: a shore that reaches out a wobbly distance, sloping down to the
+	 * water's edge, then a seabed shelving down to the natural one, instead of a straight bank along the edge.
+	 */
+	private int coast(WorldWriter w, int X, int Z, int ring, int width, int B, int top, int nat) {
+		double u = Math.max(0, Math.min(1, 0.5 + 0.8 * noise(X / 29.0, Z / 29.0, 9) + 0.35 * noise(X / 9.0, Z / 9.0, 10)));
+		int high = Math.max(0, B - top); // land above the water at the city's edge needs room to come down
+		int beach = (int) Math.round(Math.min(width - 4, 1 + 15 * u + high * 1.5));
+		BlockState sand = Blocks.SAND.defaultBlockState();
+		if (ring <= beach) {
+			double t = ring / (double) (beach + 1);
+			t = t * t * (3 - 2 * t);
+			int y = (int) Math.round(B + (top - B) * t); // down to the water's surface at the far end
+			for (int yy = nat + 1; yy < y; yy++)
+				w.set(X, yy, Z, yy >= y - 3 ? sand : pal.get("ground.subsoil"));
+			w.set(X, y, Z, y <= top + 2 ? sand : Blocks.GRASS_BLOCK.defaultBlockState());
+			for (int yy = w.anyTop(X, Z); yy > y; yy--)
+				w.air(X, yy, Z);
+			return y;
+		}
+		// under water: from just below the surface down to the natural bed (never deeper than it was)
+		double t = (ring - beach) / (double) Math.max(1, width - beach);
+		t = t * t * (3 - 2 * t);
+		int bed = (int) Math.round(top - 1 + (nat - (top - 1)) * t);
+		for (int yy = nat + 1; yy <= bed; yy++)
+			w.set(X, yy, Z, yy >= bed - 2 ? sand : pal.get("ground.subsoil"));
+		return Integer.MAX_VALUE;
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Unsquare edges */
+
+	static final int UNSQUARE_BLEND = 32;
+	/** how far in from the region's edge open land may be cut back, at most, in blocks */
+	static final int UNSQUARE_DEPTH = 64;
+	/** open land kept round rooms, buildings and walls near the edge, in blocks */
+	static final int KEEP_ROUND = 4;
+
+	/** footprint grid for the shape: the region plus the blend width on every side (null unless unsquare) */
+	private int shapeM, shapeW;
+	private boolean[] shapeKept;
+	/** per footprint block: the nearest kept region block (bx + bz * bw), and how far it is (0 = kept) */
+	private int[] shapeSrc;
+	private float[] shapeDist;
+
+	boolean unsquare() {
+		return st.unsquare && st.has(PlaceSettings.BLEND_EDGES);
+	}
+
+	/** what is never cut: rooms, buildings, walls, fences, and the river when it's lined up with a Minecraft one */
+	private boolean keepTile(int i) {
+		byte k = kind[i];
+		return map.roomId(i) != 0 || isBuilding(k) || k == FENCE || k == FORT || k == FORT_BROKEN || k == STAIRS
+				|| (st.river && isWater(k));
+	}
+
+	private int shapeIdx(int X, int Z) {
+		return (X - X0 + shapeM) + (Z - Z0 + shapeM) * shapeW;
+	}
+
+	/**
+	 * Unsquare edges: the city's shape. Open land within a wobbly distance of the region's edge (rounded at the
+	 * corners) is cut away, except round what must stay whole; then every block of the footprint gets its distance to
+	 * the nearest kept block, which the blend ramps along instead of the square ring.
+	 */
+	void computeShape() {
+		if (!unsquare() || shapeDist != null)
+			return;
+		int M = blendWidth(), W = bw + 2 * M, Hh = bh + 2 * M;
+		// tiles from the nearest tile that must stay whole (8-way, capped)
+		int mw = map.width, n = mw * map.height, cap = KEEP_ROUND / s + 2;
+		int[] pd = new int[n];
+		java.util.Arrays.fill(pd, cap);
+		ArrayDeque<Integer> q = new ArrayDeque<>();
+		for (int ty = ty0; ty <= ty1; ty++)
+			for (int tx = tx0; tx <= tx1; tx++)
+				if (keepTile(map.idx(tx, ty))) {
+					pd[map.idx(tx, ty)] = 0;
+					q.add(map.idx(tx, ty));
+				}
+		while (!q.isEmpty()) {
+			int i = q.poll(), x = i % mw, y = i / mw;
+			if (pd[i] + 1 >= cap)
+				continue;
+			for (int dy = -1; dy <= 1; dy++)
+				for (int dx = -1; dx <= 1; dx++) {
+					int nx = x + dx, ny = y + dy;
+					if (nx < tx0 || ny < ty0 || nx > tx1 || ny > ty1)
+						continue;
+					int j = nx + ny * mw;
+					if (pd[j] > pd[i] + 1) {
+						pd[j] = pd[i] + 1;
+						q.add(j);
+					}
+				}
+		}
+		int depth = Math.max(8, Math.min(UNSQUARE_DEPTH, Math.min(bw, bh) / 4));
+		boolean[] kept = new boolean[bw * bh];
+		for (int bz = 0; bz < bh; bz++)
+			for (int bx = 0; bx < bw; bx++) {
+				// distance in from the edge, rounded off at the corners
+				double ex = Math.min(bx, bw - 1 - bx) + 0.5, ez = Math.min(bz, bh - 1 - bz) + 0.5;
+				double e = ex * ez / Math.sqrt(ex * ex + ez * ez);
+				int X = X0 + bx, Z = Z0 + bz;
+				// bays and headlands of every size, so no stretch of the edge runs straight
+				double u = Math.max(0, Math.min(1, 0.5 + 0.7 * noise(X / 90.0, Z / 90.0, 7) + 0.45 * noise(X / 33.0, Z / 33.0, 8)
+						+ 0.2 * noise(X / 11.0, Z / 11.0, 11)));
+				double inset = depth * (0.08 + 0.92 * u);
+				kept[bx + bz * bw] = e >= inset || pd[map.idx(tileOfBlockX(bx), tileOfBlockZ(bz))] * s <= KEEP_ROUND;
+			}
+		// nearest kept block for every footprint block, spreading out from the shape's border
+		int[] src = new int[W * Hh];
+		float[] dist = new float[W * Hh];
+		java.util.Arrays.fill(src, -1);
+		java.util.Arrays.fill(dist, Float.MAX_VALUE);
+		ArrayDeque<Integer> qq = new ArrayDeque<>();
+		for (int bz = 0; bz < bh; bz++)
+			for (int bx = 0; bx < bw; bx++) {
+				if (!kept[bx + bz * bw])
+					continue;
+				int g = (bx + M) + (bz + M) * W;
+				src[g] = bx + bz * bw;
+				dist[g] = 0;
+				boolean border = bx == 0 || bz == 0 || bx == bw - 1 || bz == bh - 1 || !kept[bx - 1 + bz * bw] || !kept[bx + 1 + bz * bw]
+						|| !kept[bx + (bz - 1) * bw] || !kept[bx + (bz + 1) * bw];
+				if (border)
+					qq.add(g);
+			}
+		float far = M + 2;
+		while (!qq.isEmpty()) {
+			int g = qq.poll(), gx = g % W, gz = g / W, sb = src[g], sbx = sb % bw + M, sbz = sb / bw + M;
+			for (int dz = -1; dz <= 1; dz++)
+				for (int dx = -1; dx <= 1; dx++) {
+					int nx = gx + dx, nz = gz + dz;
+					if (nx < 0 || nz < 0 || nx >= W || nz >= Hh)
+						continue;
+					int j = nx + nz * W;
+					float d = (float) Math.hypot(nx - sbx, nz - sbz);
+					if (d < dist[j] - 1e-3f && d <= far) {
+						dist[j] = d;
+						src[j] = sb;
+						qq.add(j);
+					}
+				}
+		}
+		shapeM = M;
+		shapeW = W;
+		shapeKept = kept;
+		shapeSrc = src;
+		shapeDist = dist;
+	}
+
+	/** unsquare: is this region block's open land cut away (left to the blend and the Minecraft land around)? */
+	public boolean cut(int bx, int bz) {
+		return shapeKept != null && bx >= 0 && bz >= 0 && bx < bw && bz < bh && !shapeKept[bx + bz * bw];
+	}
+
+	/** unsquare: blocks out from the city's shape for a footprint block (0 inside it, MAX_VALUE beyond the blend) */
+	public int shapeRing(int X, int Z) {
+		int gx = X - X0 + shapeM, gz = Z - Z0 + shapeM;
+		if (gx < 0 || gz < 0 || gx >= shapeW || gz >= bh + 2 * shapeM)
+			return Integer.MAX_VALUE;
+		float d = shapeDist[gx + gz * shapeW];
+		return d == Float.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.ceil(d);
+	}
+
 	/* ------------------------------------------------------------------ */
 	/* River lineup */
 
@@ -1514,7 +1702,7 @@ public final class CityPlan {
 	 * (land, ponds, pools and canals). bx/bz are region-relative blocks.
 	 */
 	int waterKindAt(WorldWriter w, int bx, int bz) {
-		if (bx >= 0 && bz >= 0 && bx < bw && bz < bh) {
+		if (bx >= 0 && bz >= 0 && bx < bw && bz < bh && !cut(bx, bz)) {
 			int i = map.idx(tileOfBlockX(bx), tileOfBlockZ(bz));
 			if (map.roomId(i) != 0)
 				return 0;
@@ -1530,7 +1718,7 @@ public final class CityPlan {
 	static final int RIVER_BLEND = 48;
 
 	public int blendWidth() {
-		return st.river ? RIVER_BLEND : PlacementJob.BLEND_WIDTH;
+		return st.river ? RIVER_BLEND : unsquare() ? UNSQUARE_BLEND : PlacementJob.BLEND_WIDTH;
 	}
 
 	/**

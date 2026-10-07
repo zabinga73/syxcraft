@@ -90,6 +90,7 @@ public final class PlacementJob {
 
 	private void startColumns() {
 		plan.computeRoofDistances();
+		plan.computeShape();
 		chat.accept(String.format("Syx: building %s (%dx%d tiles = %dx%d blocks) at x=%d..%d z=%d..%d, ground y=%d",
 				plan.map.save != null ? plan.map.save : plan.map.city, plan.tx1 - plan.tx0 + 1, plan.ty1 - plan.ty0 + 1,
 				plan.bw, plan.bh, plan.X0, plan.X0 + plan.bw - 1, plan.Z0, plan.Z0 + plan.bh - 1, plan.B));
@@ -212,13 +213,20 @@ public final class PlacementJob {
 			for (int x = cx * 16; x < cx * 16 + 16; x++) {
 				int bx = x - plan.X0, bz = z - plan.Z0;
 				boolean inside = bx >= 0 && bz >= 0 && bx < plan.bw && bz < plan.bh;
+				boolean cut = plan.cut(bx, bz);
 				if (!blend) {
-					if (inside)
+					if (inside && !cut)
 						plan.column(w, bx, bz);
-				} else if (!inside) {
-					int ring = Math.max(Math.max(-bx, bx - plan.bw + 1), Math.max(-bz, bz - plan.bh + 1));
-					if (ring >= 1 && ring <= plan.blendWidth())
-						blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16] = plan.blendColumn(w, x, z, ring, plan.blendWidth());
+				} else if (!inside || cut) {
+					int rect = inside ? 0 : Math.max(Math.max(-bx, bx - plan.bw + 1), Math.max(-bz, bz - plan.bh + 1));
+					// unsquare: the ramp runs out from the city's shape, not from the square
+					int ring = plan.unsquare() ? plan.shapeRing(x, z) : rect;
+					// River lineup funnels run out from the square's edge whatever the shape
+					boolean funnel = plan.st.river && rect >= 1 && rect <= plan.blendWidth();
+					if ((ring >= 1 && ring <= plan.blendWidth()) || funnel) {
+						int t = plan.blendColumn(w, x, z, ring, plan.blendWidth());
+						blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16] = t;
+					}
 				}
 			}
 	}
@@ -344,7 +352,8 @@ public final class PlacementJob {
 			for (int x = cx * 16; x < cx * 16 + 16; x++) {
 				int bx = x - plan.X0, bz = z - plan.Z0;
 				boolean inside = bx >= 0 && bz >= 0 && bx < plan.bw && bz < plan.bh;
-				int expect = inside ? plan.builtTop[bx + bz * plan.bw] : blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16];
+				int expect = inside && !plan.cut(bx, bz) ? plan.builtTop[bx + bz * plan.bw]
+						: blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16];
 				if (expect != Integer.MIN_VALUE && expect != Integer.MAX_VALUE)
 					CityPlan.sweepFluids(w, x, z, expect);
 			}

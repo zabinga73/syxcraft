@@ -83,6 +83,8 @@ final class Details {
 		int x = p.blockX(tx) + (int) ((h >> 8) % s), z = p.blockZ(ty) + (int) ((h >> 12) % s);
 		String type = (h >> 16) % 5 == 0 ? "Birch" : (size == 2 && (h >> 20) % 3 == 0) ? "Dark" : "";
 		BlockState log = p.pal.get("log" + type, "log"), leaves = p.pal.get("leaves" + type, "leaves");
+		if (p.cut(x - p.X0, z - p.Z0))
+			return; // unsquare: this bit of open land was left to the Minecraft terrain
 		final int B = p.groundY(x - p.X0, z - p.Z0); // topography may have moved the ground under this tree
 		int trunk = 3 + size * 2 + (int) ((h >> 24) & 1);
 		for (int y = B + 1; y <= B + trunk; y++)

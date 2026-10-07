@@ -38,6 +38,8 @@ To uninstall, delete the files. Placed cities stay in the world.
     **Hills** caps how high land may rise, **Valleys** how deep it may sink (default 5).
   - **Layers:** terrain, water, clear above, fill below, plants, blend edges, buildings, roofs, furniture, quarries.
   - **Roof style, wall height, quarry depth** (quarries and mass graves).
+  - **Unsquare edges** (with Blend edges, on by default): the open land at the edges is cut back along a wobbly line
+    and eased into the Minecraft land, and land meeting the sea ends in a beach, so the city doesn't sit in a square.
   - **Caves:** how high mountain caves are inside (auto = the wall height), and **Cave torches** to light them.
   - **Citizens** (experimental, off by default): the city's people as named villagers with professions from their
     jobs, capped at 25–400 (a big city is sampled evenly).

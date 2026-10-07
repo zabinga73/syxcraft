@@ -268,6 +268,12 @@ public class SyxPlaceScreen extends Screen {
 		addRenderableWidget(CycleButton.onOffBuilder(SyxcraftClient.showPreview)
 				.withTooltip(v -> Tooltip.create(Component.literal("Show the city's outline in the world with particles.")))
 				.create(right, y, colW, 20, Component.literal("Preview outline"), (b, v) -> SyxcraftClient.showPreview = v));
+		y += ROW;
+		addRenderableWidget(CycleButton.onOffBuilder(st.unsquare)
+				.withTooltip(v -> Tooltip.create(Component.literal("Unsquare: with Blend edges, the open land at the edges is cut back along a wobbly line "
+						+ "and eased into the Minecraft land around it, so the city doesn't sit in a square. Rooms, buildings and walls "
+						+ "near the edge are kept whole.")))
+				.create(right, y, colW, 20, Component.literal("Unsquare edges"), (b, v) -> st.unsquare = v));
 	}
 
 	private void toggle(int x, int y, int w, String label, int layer, String tip) {

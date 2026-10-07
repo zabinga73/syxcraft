@@ -271,9 +271,12 @@ public final class SyxServer {
 									// onto the top block at x/z (the chat link after a River lineup placement)
 									int x = IntegerArgumentType.getInteger(c, "x"), z = IntegerArgumentType.getInteger(c, "z");
 									ServerLevel level = c.getSource().getLevel();
-									int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+									// the level's own getHeight answers the bottom of the world for a chunk that isn't loaded
+									// (the city is usually far away): load it first, then stand on its top block
+									int y = level.getChunk(x >> 4, z >> 4).getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+											x & 15, z & 15) + 1;
 									c.getSource().getServer().getCommands().performPrefixedCommand(c.getSource(),
-											"tp @s " + x + " " + y + " " + z);
+											"tp @s " + x + ".5 " + y + " " + z + ".5");
 									return 1;
 								}))))
 				.then(Commands.literal("regen")
@@ -421,7 +424,7 @@ public final class SyxServer {
 		try {
 			// "local", "local+sea", "flat+domed+sea": topography, then optionally a ground height mode (auto | sea |
 			// custom), a roof style (hipped | pointed | domed | flat | mixed), "citizens", "peaks"/"nopeaks", "river", "keep"
-			// (River lineup at x/z, no search), "torches", "cave<height>", "m<margin>" and "whole", in any order
+			// (River lineup at x/z, no search), "square"/"unsquare", "torches", "cave<height>", "m<margin>" and "whole", in any order
 			String[] t = StringArgumentType.getString(c, "topography").toUpperCase().split("\\+");
 			for (int k = 1; k < t.length; k++) {
 				if (t[k].startsWith("SEA"))
@@ -434,6 +437,10 @@ public final class SyxServer {
 					st.peaks = false;
 				else if (t[k].equals("RIVER"))
 					st.river = true;
+				else if (t[k].equals("SQUARE"))
+					st.unsquare = false;
+				else if (t[k].equals("UNSQUARE"))
+					st.unsquare = true;
 				else if (t[k].equals("KEEP"))
 					st.keepSpot = true;
 				else if (t[k].equals("TORCHES"))

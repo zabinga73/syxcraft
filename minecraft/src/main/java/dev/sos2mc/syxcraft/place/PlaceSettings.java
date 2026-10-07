@@ -80,6 +80,8 @@ public final class PlaceSettings {
 	public boolean river = false;
 	/** most villagers the CITIZENS layer spawns; a big city is sampled evenly down to this (0 = everyone) */
 	public int citizenCap = 100;
+	/** blend edges: cut the open land at the edges back along a wobbly line and ramp from there, so no square shows */
+	public boolean unsquare = true;
 	/** clear height of mountain caves in blocks (0 = automatic: the buildings' interior height) */
 	public int caveHeight = 0;
 	/** River lineup: place at x/z as given instead of searching for a river (regenerating a city where it was) */
@@ -135,6 +137,7 @@ public final class PlaceSettings {
 		s.roof = roof;
 		s.caveHeight = caveHeight;
 		s.keepSpot = keepSpot;
+		s.unsquare = unsquare;
 		return s;
 	}
 
@@ -162,6 +165,7 @@ public final class PlaceSettings {
 		b.writeBoolean(river);
 		b.writeVarInt(caveHeight);
 		b.writeBoolean(keepSpot);
+		b.writeBoolean(unsquare);
 	}
 
 	public static PlaceSettings read(FriendlyByteBuf b) {
@@ -189,6 +193,7 @@ public final class PlaceSettings {
 		s.river = b.readBoolean();
 		s.caveHeight = Math.max(0, Math.min(64, b.readVarInt()));
 		s.keepSpot = b.readBoolean();
+		s.unsquare = b.readBoolean();
 		return s;
 	}
 }

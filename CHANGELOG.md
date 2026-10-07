@@ -2,6 +2,21 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.3
+Syxcraft:
+- [Teleport to the city centre] no longer drops you under the world: the far-away chunk is loaded before its height is
+  read, and you land standing on its top block (centre of the block, no fall).
+- Unsquare edges (What to build page, on by default, needs Blend edges): the city no longer sits in a square. Open
+  land along the area's edges is cut back along a wobbly line (bays and headlands of every size, rounded corners), and
+  the Minecraft land around takes over there. Rooms, buildings, walls and fences near the edge are kept whole with a
+  few blocks of land round them, and so is the river with River lineup. The blend ramp runs out from that shape, 32
+  blocks wide.
+- Blend ramps are eased at both ends instead of straight, so they leave the city and meet the land without a crease,
+  and a mountain at the edge slopes down from its own flanks instead of ending in a sheer face.
+- Coasts: where the city's land meets Minecraft sea or lake, it ends in a beach that reaches out a varying distance,
+  sloping down to the water, then a sandy seabed shelving down to the natural one, instead of a straight bank.
+- `/syx place` options: `square` / `unsquare`.
+
 ## 1.8.2
 Syxcraft:
 - River lineup: no more cliffs and holes in the riverbed where the city's river runs into the Minecraft one.
