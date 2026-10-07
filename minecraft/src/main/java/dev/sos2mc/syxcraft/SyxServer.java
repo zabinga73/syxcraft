@@ -272,11 +272,13 @@ public final class SyxServer {
 		st.scale = scale;
 		try {
 			// "local", "local+sea", "flat+domed+sea": topography, then optionally a ground height mode (auto | sea |
-			// custom) and a roof style (hipped | pointed | domed | flat | mixed), in any order
+			// custom), a roof style (hipped | pointed | domed | flat | mixed) and "citizens", in any order
 			String[] t = StringArgumentType.getString(c, "topography").toUpperCase().split("\\+");
 			for (int k = 1; k < t.length; k++) {
 				if (t[k].startsWith("SEA"))
 					st.height = PlaceSettings.Height.SEA_LEVEL;
+				else if (t[k].equals("CITIZENS"))
+					st.set(PlaceSettings.CITIZENS, true);
 				else if (t[k].equals("AUTO") || t[k].equals("CUSTOM"))
 					st.height = PlaceSettings.Height.valueOf(t[k]);
 				else

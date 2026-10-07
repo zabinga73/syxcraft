@@ -28,6 +28,7 @@ public final class PlacementJob {
 
 	public Stage stage = Stage.HEIGHT;
 	private final long started = System.currentTimeMillis();
+	private long startTick = Long.MIN_VALUE;
 
 	// HEIGHT
 	private final List<int[]> samplePoints = new ArrayList<>();
@@ -93,6 +94,8 @@ public final class PlacementJob {
 	/** run for up to budgetMs; returns false once finished */
 	public boolean tick(long budgetMs) {
 		long end = System.nanoTime() + budgetMs * 1_000_000L;
+		if (startTick == Long.MIN_VALUE)
+			startTick = w.level.getGameTime();
 		try {
 			while (System.nanoTime() < end) {
 				switch (stage) {
@@ -165,6 +168,16 @@ public final class PlacementJob {
 
 	private List<Runnable> detailJobs() {
 		List<Runnable> jobs = new Details(plan).jobs(w);
+		jobs.addAll(plan.plantCrops(w));
+		// grass, flowers and mushrooms whose ground was rebuilt pop off as items: clear away what dropped during this
+		// placement (an item's age is saved, so older items lying here stay)
+		jobs.add(() -> {
+			long ticks = w.level.getGameTime() - startTick;
+			var box = new net.minecraft.world.phys.AABB(plan.X0 - BLEND_WIDTH - 2, w.minY(), plan.Z0 - BLEND_WIDTH - 2,
+					plan.X0 + plan.bw + BLEND_WIDTH + 2, w.maxY(), plan.Z0 + plan.bh + BLEND_WIDTH + 2);
+			for (var item : w.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, e -> e.getAge() <= ticks))
+				item.discard();
+		});
 		if (plan.st.has(PlaceSettings.CITIZENS))
 			jobs.addAll(new Citizens(plan, chat).jobs(w));
 		return jobs;

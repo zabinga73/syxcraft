@@ -192,7 +192,7 @@ final class Render {
 					dev.sos2mc.syxcraft.Syxcraft.LOG.info("jut at {} {} {} (neighbours {} {})", x, t, z, a, b);
 			}
 		// farmland with no water within 4 blocks (it dries out): the same rule as FarmBlock.isNearWater, one layer
-		int dry = 0, farmland = 0;
+		int dry = 0, farmland = 0, bare = 0;
 		var fp = new net.minecraft.core.BlockPos.MutableBlockPos();
 		for (int z = j.plan.Z0; z < j.plan.Z0 + j.plan.bh; z++)
 			for (int x = j.plan.X0; x < j.plan.X0 + j.plan.bw; x++) {
@@ -200,6 +200,8 @@ final class Render {
 				if (!level.getBlockState(pos.set(x, fy, z)).is(net.minecraft.world.level.block.Blocks.FARMLAND))
 					continue;
 				farmland++;
+				if (level.getBlockState(fp.set(x, fy + 1, z)).isAir() && bare++ < 5)
+					dev.sos2mc.syxcraft.Syxcraft.LOG.info("bare farmland at {} {} {}", x, fy, z);
 				boolean wet = false;
 				for (int dz = -4; dz <= 4 && !wet; dz++)
 					for (int dx = -4; dx <= 4 && !wet; dx++)
@@ -210,8 +212,8 @@ final class Render {
 			}
 		int paintings = level.getEntitiesOfClass(net.minecraft.world.entity.decoration.painting.Painting.class,
 				new net.minecraft.world.phys.AABB(j.plan.X0, j.plan.B - 64, j.plan.Z0, j.plan.X0 + j.plan.bw, j.plan.B + 64, j.plan.Z0 + j.plan.bh)).size();
-		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d highLavaColumns=%d spikes=%d blendJuts=%d paintings=%d farmland=%d dryFarmland=%d",
-				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater, highLava, spikes, jut, paintings, farmland, dry);
+		return String.format("doors=%d doublePairs=%d singles=%d wrongHinges=%d runsOf3=%d panes=%d loosePanes=%d houseWallBlocks=%d atticAir=%d floatingColumns=%d highWaterColumns=%d highLavaColumns=%d spikes=%d blendJuts=%d paintings=%d farmland=%d dryFarmland=%d bareFarmland=%d",
+				doors, pairs, doors - 2 * pairs, badPairs, triples, panes, loose, houseWalls, attic, floating, highWater, highLava, spikes, jut, paintings, farmland, dry, bare);
 	}
 
 	private static int clamp(int v) {

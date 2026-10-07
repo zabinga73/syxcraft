@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import dev.sos2mc.syxcraft.map.SyxMap;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -54,6 +55,9 @@ public final class CityPlan {
 	private int[] buildingDepth;
 	/** per region block: water in a farm, placed so every farmland block is within 4 of water in its own farm */
 	private java.util.BitSet farmWater;
+	/** crops held back by write() until everything around them is placed */
+	private final it.unimi.dsi.fastutil.longs.LongArrayList cropPos = new it.unimi.dsi.fastutil.longs.LongArrayList();
+	private final java.util.ArrayList<BlockState> cropState = new java.util.ArrayList<>();
 	/** per building: its footprint's bounding box in region blocks (minX, minZ, maxX, maxZ), for domes */
 	private int[][] buildingBox;
 	private String[] buildingWood;
@@ -463,6 +467,30 @@ public final class CityPlan {
 
 	private boolean inRoom(int id, int bx, int bz) {
 		return bx >= 0 && bz >= 0 && bx < bw && bz < bh && map.roomId(map.idx(tileOfBlockX(bx), tileOfBlockZ(bz))) == id;
+	}
+
+	/**
+	 * Plants the crops write() held back, without shape updates, so a crop isn't checked for light before the light
+	 * engine has caught up with the new ground (it pops off below light 8). Run after everything else is placed.
+	 */
+	List<Runnable> plantCrops(WorldWriter w) {
+		List<Runnable> jobs = new ArrayList<>();
+		for (int from = 0; from < cropPos.size(); from += 4096) {
+			int a = from, b = Math.min(cropPos.size(), from + 4096);
+			jobs.add(() -> {
+				for (int k = a; k < b; k++) {
+					long p = cropPos.getLong(k);
+					int x = BlockPos.getX(p), y = BlockPos.getY(p), z = BlockPos.getZ(p);
+					if (w.get(x, y, z).isAir())
+						w.set(x, y, z, cropState.get(k), WorldWriter.FLAGS_RAW);
+				}
+			});
+		}
+		jobs.add(() -> {
+			cropPos.clear();
+			cropState.clear();
+		});
+		return jobs;
 	}
 
 	static boolean isFarmland(String crop) {
@@ -1303,6 +1331,14 @@ public final class CityPlan {
 			int y = idx - BELOW + B;
 			lowest = Math.min(lowest, y);
 			highest = Math.max(highest, y);
+			if (col[idx].getBlock() instanceof net.minecraft.world.level.block.CropBlock) {
+				// planted at the very end (plantCrops): a crop pops off at any shape update from a neighbour written
+				// after it while the new ground's light hasn't caught up yet, and that stripped whole fields
+				cropPos.add(BlockPos.asLong(X, y, Z));
+				cropState.add(col[idx]);
+				w.air(X, y, Z);
+				continue;
+			}
 			w.set(X, y, Z, col[idx]);
 		}
 		builtTop[(X - X0) + (Z - Z0) * bw] = highest;

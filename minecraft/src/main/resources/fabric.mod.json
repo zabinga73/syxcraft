@@ -11,6 +11,7 @@
 		"main": ["dev.sos2mc.syxcraft.Syxcraft"],
 		"client": ["dev.sos2mc.syxcraft.client.SyxcraftClient"]
 	},
+	"mixins": ["syxcraft.mixins.json"],
 	"depends": {
 		"fabricloader": ">=0.19.5",
 		"minecraft": "~26.3",

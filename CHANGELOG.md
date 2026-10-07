@@ -2,6 +2,18 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.6.6
+Syxcraft:
+- Fix: farms no longer lose their crops. In Minecraft 26.x a crop needs light 8 or more to stay put (there's no "sees
+  the sky" exception any more), and while a city is being built the light on freshly built ground lags behind. Any
+  block written next to a crop in that window knocked it off, which stripped whole fields at scale 3 (Loban: 9,435
+  of 17,247 farmland blocks bare, about 4,000 dropped items). Crops are now planted in a last pass once everything
+  around them is placed (Loban: none bare).
+- Items that dropped while the city was built (seeds, flowers and mushrooms from the old ground) are cleared away at
+  the end. Items that were already lying there stay.
+- Citizens keep their farmer job but don't harvest, so the fields stay ripe. Other villagers farm as usual.
+- `/syx place ... <topography>+citizens` moves the citizens in, and `/syx check` reports `bareFarmland`.
+
 ## 1.6.5
 Syxcraft:
 - Fix: farms no longer have strips that dry out. Their water sat on a fixed world grid, so thin or oddly shaped farms
