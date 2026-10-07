@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import dev.sos2mc.syxcraft.Syxcraft;
 import dev.sos2mc.syxcraft.map.SyxMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.Blocks;
 
 /**
  * Builds a city over many server ticks within a time budget, so the game keeps running. Stages: pick the ground
@@ -17,7 +18,7 @@ import net.minecraft.server.level.ServerLevel;
 public final class PlacementJob {
 
 	public enum Stage {
-		HEIGHT, COLUMNS, BLEND, SWEEP, DETAILS, DONE, CANCELLED, FAILED
+		HEIGHT, COLUMNS, BLEND, BED, SWEEP, DETAILS, DONE, CANCELLED, FAILED
 	}
 
 	public static final int BLEND_WIDTH = 16;
@@ -125,11 +126,26 @@ public final class PlacementJob {
 				}
 				case BLEND -> {
 					if (chunkIdx >= chunkOrder.length) {
-						stage = Stage.SWEEP;
+						stage = plan.st.river ? Stage.BED : Stage.SWEEP;
 						chunkIdx = 0;
 						continue;
 					}
 					columnsOfChunk(chunkOrder[chunkIdx++], true);
+				}
+				case BED -> {
+					// River lineup: read every water column's depth, smooth the riverbed, then write it back
+					if (chunkIdx >= chunkOrder.length) {
+						if (!bedSmoothed) {
+							smoothBed();
+							bedSmoothed = true;
+							chunkIdx = 0;
+						} else {
+							stage = Stage.SWEEP;
+							chunkIdx = 0;
+						}
+						continue;
+					}
+					bedChunk(chunkOrder[chunkIdx++], bedSmoothed);
 				}
 				case SWEEP -> {
 					if (chunkIdx >= chunkOrder.length) {
@@ -206,6 +222,107 @@ public final class PlacementJob {
 			}
 	}
 
+	/* River lineup: riverbed smoothing over the footprint (region and blend ring) */
+
+	/** per footprint column: 0 land, 1 water whose bed may move, 2 water that stays (bridges); and its depth */
+	private byte[] bedKind;
+	private byte[] bedDepth, bedNew;
+	private boolean bedSmoothed;
+	/** how far the riverbed is averaged, in blocks: the wider, the gentler */
+	static final int BED_RADIUS = 6;
+
+	private int footIdx(int x, int z) {
+		return (x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16;
+	}
+
+	/** read (write = false) or rewrite one chunk's water columns */
+	private void bedChunk(int c, boolean write) {
+		int cx = cx0 + c % chunksX, cz = cz0 + c / chunksX, top = plan.B - 1;
+		if (bedKind == null) {
+			bedKind = new byte[chunksX * 16 * chunksZ * 16];
+			bedDepth = new byte[bedKind.length];
+		}
+		w.freezeFluids(cx, cz);
+		for (int z = cz * 16; z < cz * 16 + 16; z++)
+			for (int x = cx * 16; x < cx * 16 + 16; x++) {
+				int i = footIdx(x, z);
+				if (!write) {
+					int k = plan.waterKindAt(w, x - plan.X0, z - plan.Z0);
+					bedKind[i] = (byte) k;
+					if (k != 0) {
+						int d = 0;
+						while (d < 24 && w.get(x, top - d - 1, z).getFluidState().is(net.minecraft.tags.FluidTags.WATER))
+							d++;
+						bedDepth[i] = (byte) (d + 1); // the surface block counts
+					}
+					continue;
+				}
+				if (bedKind[i] != 1 || bedNew[i] == bedDepth[i])
+					continue;
+				int od = bedDepth[i], nd = bedNew[i];
+				if (nd > od) {
+					// deeper: the old bed becomes water, on a bed of sand where there's nothing solid
+					for (int y = top - nd + 1; y <= top - od; y++)
+						w.set(x, y, z, plan.pal.get("water"));
+					if (WorldWriter.soft(w.get(x, top - nd, z)))
+						w.set(x, top - nd, z, Blocks.SAND.defaultBlockState());
+				} else {
+					// shallower: fill up with sand
+					for (int y = top - od + 1; y <= top - nd; y++)
+						w.set(x, y, z, Blocks.SAND.defaultBlockState());
+				}
+			}
+	}
+
+	/**
+	 * The new riverbed: each water column's depth averaged over its surroundings (land counts as depth 0, so the bed
+	 * shelves up to the banks). Two box blurs, so the city's deep channel, the funnels and the Minecraft river's own bed
+	 * run into each other without steps or walls.
+	 */
+	private void smoothBed() {
+		int W = chunksX * 16, H = chunksZ * 16;
+		float[] d = new float[W * H], t = new float[W * H];
+		for (int i = 0; i < d.length; i++)
+			d[i] = bedKind[i] == 0 ? 0 : bedDepth[i];
+		for (int pass = 0; pass < 2; pass++) {
+			blur(d, t, W, H, BED_RADIUS, true);
+			blur(t, d, W, H, BED_RADIUS, false);
+		}
+		bedNew = new byte[d.length];
+		int changed = 0;
+		for (int i = 0; i < d.length; i++) {
+			if (bedKind[i] != 1)
+				continue;
+			// out in the ring, fade back to the bed that was there, so it meets the untouched river beyond
+			int x = cx0 * 16 + i % W - plan.X0, z = cz0 * 16 + i / W - plan.Z0;
+			int ring = Math.max(Math.max(-x, x - plan.bw + 1), Math.max(-z, z - plan.bh + 1)), half = plan.blendWidth() / 2;
+			double f = ring <= half ? 0 : Math.min(1, (ring - half) / (double) half);
+			f = f * f * (3 - 2 * f);
+			bedNew[i] = (byte) Math.max(1, Math.min(14, Math.round(d[i] * (1 - f) + bedDepth[i] * f)));
+			if (bedNew[i] != bedDepth[i])
+				changed++;
+		}
+		Syxcraft.LOG.info("riverbed smoothing: {} water columns changed", changed);
+	}
+
+	/** box blur along x (or z), clamping at the edges */
+	private static void blur(float[] in, float[] out, int W, int H, int r, boolean alongX) {
+		int n = alongX ? W : H, m = alongX ? H : W;
+		for (int j = 0; j < m; j++) {
+			double sum = 0;
+			for (int k = -r; k <= r; k++)
+				sum += in[at(Math.max(0, Math.min(n - 1, k)), j, W, alongX)];
+			for (int i = 0; i < n; i++) {
+				out[at(i, j, W, alongX)] = (float) (sum / (2 * r + 1));
+				sum += in[at(Math.min(n - 1, i + r + 1), j, W, alongX)] - in[at(Math.max(0, i - r), j, W, alongX)];
+			}
+		}
+	}
+
+	private static int at(int i, int j, int W, boolean alongX) {
+		return alongX ? i + j * W : j + i * W;
+	}
+
 	private void sweepChunk(int c) {
 		int cx = cx0 + c % chunksX, cz = cz0 + c / chunksX;
 		w.freezeFluids(cx, cz);
@@ -227,7 +344,7 @@ public final class PlacementJob {
 	}
 
 	public boolean running() {
-		return stage == Stage.HEIGHT || stage == Stage.COLUMNS || stage == Stage.BLEND || stage == Stage.SWEEP
+		return stage == Stage.HEIGHT || stage == Stage.COLUMNS || stage == Stage.BLEND || stage == Stage.BED || stage == Stage.SWEEP
 				|| stage == Stage.DETAILS;
 	}
 
@@ -236,6 +353,7 @@ public final class PlacementJob {
 		case HEIGHT -> 0.02f * sampleIdx / Math.max(1, samplePoints.size());
 		case COLUMNS -> 0.02f + 0.76f * chunkIdx / Math.max(1, chunkOrder.length);
 		case BLEND -> 0.78f + 0.04f * chunkIdx / Math.max(1, chunkOrder.length);
+		case BED -> 0.82f;
 		case SWEEP -> 0.82f + 0.03f * chunkIdx / Math.max(1, chunkOrder.length);
 		case DETAILS -> 0.85f + 0.15f * detailIdx / Math.max(1, details.size());
 		default -> 1f;
@@ -247,6 +365,7 @@ public final class PlacementJob {
 		case HEIGHT -> "Measuring terrain";
 		case COLUMNS -> "Building terrain and buildings";
 		case BLEND -> "Blending edges";
+		case BED -> bedSmoothed ? "Smoothing the riverbed" : "Measuring the riverbed";
 		case SWEEP -> "Sweeping away stray water and lava";
 		case DETAILS -> "Trees, furniture and citizens";
 		case DONE -> "Done";

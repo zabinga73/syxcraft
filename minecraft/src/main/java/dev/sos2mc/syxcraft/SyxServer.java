@@ -47,6 +47,8 @@ public final class SyxServer {
 	/** River lineup: the search running before a placement, and what to do with its result */
 	private static CompletableFuture<RiverFinder.Result> riverSearch;
 	private static Consumer<RiverFinder.Result> riverStart;
+	/** where a River lineup placement went, for the teleport link once it's done */
+	private static int[] riverCentre;
 	/** the most recent job, kept for /syx render */
 	static PlacementJob last;
 
@@ -153,6 +155,7 @@ public final class SyxServer {
 					Syxcraft.LOG.info(msg);
 				});
 				job.rivers = exits;
+				riverCentre = new int[] { r.x(), r.z() };
 			};
 			return true;
 		}
@@ -210,6 +213,18 @@ public final class SyxServer {
 					pl.sendOverlayMessage(Component.literal("Syx: " + status));
 			}
 		}
+		if (was && !job.running() && riverCentre != null) {
+			// the city may have moved far: offer a teleport to its centre
+			ServerPlayer pl = server.getPlayerList().getPlayer(owner);
+			if (pl != null && job.stage == PlacementJob.Stage.DONE) {
+				String cmd = "/syx goto " + riverCentre[0] + " " + riverCentre[1];
+				pl.sendSystemMessage(Component.literal("Syx: the city is at x=" + riverCentre[0] + " z=" + riverCentre[1] + ". ")
+						.append(Component.literal("[Teleport to the city centre]").withStyle(st -> st.withColor(net.minecraft.ChatFormatting.AQUA)
+								.withUnderlined(true).withClickEvent(new net.minecraft.network.chat.ClickEvent.RunCommand(cmd))
+								.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal(cmd))))));
+			}
+			riverCentre = null;
+		}
 		if (!job.running() && ticks % 10 == 0)
 			job = null;
 	}
@@ -219,6 +234,17 @@ public final class SyxServer {
 	private static void commands(CommandDispatcher<CommandSourceStack> d) {
 		d.register(Commands.literal("syx")
 				.then(Commands.literal("list").executes(SyxServer::list))
+				.then(Commands.literal("goto").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+						.then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("z", IntegerArgumentType.integer())
+								.executes(c -> {
+									// onto the top block at x/z (the chat link after a River lineup placement)
+									int x = IntegerArgumentType.getInteger(c, "x"), z = IntegerArgumentType.getInteger(c, "z");
+									ServerLevel level = c.getSource().getLevel();
+									int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, x, z);
+									c.getSource().getServer().getCommands().performPrefixedCommand(c.getSource(),
+											"tp @s " + x + " " + y + " " + z);
+									return 1;
+								}))))
 				.then(Commands.literal("rivers").then(Commands.argument("file", StringArgumentType.string()).executes(c -> {
 					// which areas of a map have a river to line up with (what the placer screen's check mark shows)
 					SyxMap m = load(StringArgumentType.getString(c, "file"));

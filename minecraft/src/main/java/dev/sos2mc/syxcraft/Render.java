@@ -59,6 +59,21 @@ final class Render {
 		for (int t : top)
 			bb.putInt(t);
 		java.nio.file.Files.write(out.resolveSibling(name.replace(".png", "-height.bin")), bb.array());
+		// and the ground under any water or ice (riverbeds), same layout
+		bb.clear();
+		bb.putInt(w).putInt(h);
+		for (int z = 0; z < h; z++)
+			for (int x = 0; x < w; x++) {
+				int y = top[x + z * w];
+				while (y > level.getMinY()) {
+					BlockState s = level.getBlockState(pos.set(x0 + x, y, z0 + z));
+					if (!(s.isAir() || !s.getFluidState().isEmpty() || s.is(net.minecraft.tags.BlockTags.ICE) || s.canBeReplaced()))
+						break;
+					y--;
+				}
+				bb.putInt(y);
+			}
+		java.nio.file.Files.write(out.resolveSibling(name.replace(".png", "-bed.bin")), bb.array());
 		ImageIO.write(el, "png", out.resolveSibling(name.replace(".png", "-height.png")).toFile());
 	}
 

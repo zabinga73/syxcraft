@@ -2,6 +2,18 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.1
+Syxcraft:
+- River lineup: smooth riverbeds. After blending, every water column of the city and the blend ring gets its depth
+  averaged over about 6 blocks round it, with land counting as depth 0 so the bed shelves up to the banks. The city's
+  deep channel, the funnels and the Minecraft river's bed now run into each other with no underwater walls or steps
+  (the wall along the city's edge is gone). Towards the ring's outer edge the bed fades back to what was there, so it
+  meets the untouched river beyond. Each funnel ends as deep as the Minecraft river it runs into. Bridges, ponds,
+  pools and canals keep their beds.
+- River lineup: once the city is placed, chat offers a clickable [Teleport to the city centre] (`/syx goto <x> <z>`
+  puts you on the top block there).
+- `/syx render` also writes the ground under water and ice (`syxcraft-render-bed.bin`).
+
 ## 1.8.0
 Syxcraft:
 - River lineup (placer screen, next to Scale; `/syx place <file> 1 ... <topography>+river`): moves the city to where

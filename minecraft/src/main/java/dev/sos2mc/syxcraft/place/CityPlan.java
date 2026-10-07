@@ -1501,6 +1501,24 @@ public final class CityPlan {
 	/* ------------------------------------------------------------------ */
 	/* River lineup */
 
+	/**
+	 * Riverbed smoothing: 1 = open water whose bed may move (the city's lakes and rivers, the funnels and Minecraft
+	 * water at the city's water level in the ring), 2 = water that keeps its bed (under bridges), 0 = anything else
+	 * (land, ponds, pools and canals). bx/bz are region-relative blocks.
+	 */
+	int waterKindAt(WorldWriter w, int bx, int bz) {
+		if (bx >= 0 && bz >= 0 && bx < bw && bz < bh) {
+			int i = map.idx(tileOfBlockX(bx), tileOfBlockZ(bz));
+			if (map.roomId(i) != 0)
+				return 0;
+			return kind[i] == WATER_SHALLOW || kind[i] == WATER_DEEP ? 1 : kind[i] == BRIDGE ? 2 : 0;
+		}
+		int X = X0 + bx, Z = Z0 + bz;
+		BlockState s = w.get(X, B - 1, Z);
+		boolean wet = s.getFluidState().is(net.minecraft.tags.FluidTags.WATER) || s.is(net.minecraft.tags.BlockTags.ICE);
+		return wet && !w.get(X, B, Z).getFluidState().is(net.minecraft.tags.FluidTags.WATER) ? 1 : 0;
+	}
+
 	/** the blend ring is wider with River lineup, so the city's broad river has room to narrow down */
 	static final int RIVER_BLEND = 48;
 
@@ -1511,9 +1529,9 @@ public final class CityPlan {
 	/**
 	 * A river channel through the blend ring, from where the city's river leaves (centre cs, width ws, along the side
 	 * in region blocks) to the Minecraft river found at the ring's outer edge (cm, wm; wm 0 = none found, the channel
-	 * narrows to nothing).
+	 * narrows to nothing). depth: the city river's at the exit; depthEnd: the Minecraft river's where the funnel meets it.
 	 */
-	record Funnel(int side, double cs, double ws, double cm, double wm, int depth) {
+	record Funnel(int side, double cs, double ws, double cm, double wm, int depth, int depthEnd) {
 	}
 
 	private List<Funnel> funnels = List.of();
@@ -1548,6 +1566,7 @@ public final class CityPlan {
 			// Minecraft river water along the ring's outer edge, near the exit: runs of water at the city's water level
 			int from = (int) Math.floor(cs - ws - W), to = (int) Math.ceil(cs + ws + W);
 			double bestC = cs, bestW = 0, bestScore = -Double.MAX_VALUE;
+			int bestDepth = 3;
 			int run = -1, dry = 0;
 			for (int a = from; a <= to + 1; a++) {
 				boolean wet = false;
@@ -1574,11 +1593,17 @@ public final class CityPlan {
 						bestScore = score;
 						bestC = c;
 						bestW = Math.max(4, Math.min(24, width));
+						// its depth in the middle, so the funnel ends as deep as the river it runs into
+						int[] p = ringPos(e.side(), (int) Math.floor(c), W);
+						int d = 1;
+						while (d < 14 && w.get(p[0], B - 1 - d, p[1]).getFluidState().is(net.minecraft.tags.FluidTags.WATER))
+							d++;
+						bestDepth = d;
 					}
 					run = -1;
 				}
 			}
-			out.add(new Funnel(e.side(), cs, ws, bestW > 0 ? bestC : cs, bestW, depth));
+			out.add(new Funnel(e.side(), cs, ws, bestW > 0 ? bestC : cs, bestW, depth, bestDepth));
 			dev.sos2mc.syxcraft.Syxcraft.LOG.info("river exit side {} centre {} width {} -> Minecraft river at {} width {} (len {})", e.side(), cs, ws,
 					bestW > 0 ? bestC : "none", bestW, len);
 		}
@@ -1611,7 +1636,7 @@ public final class CityPlan {
 			double off = Math.abs(along + 0.5 - c);
 			if (hw < 1 || off > hw)
 				continue;
-			int dmax = (int) Math.round(f.depth() * (1 - sm) + 3 * sm);
+			int dmax = (int) Math.round(f.depth() * (1 - sm) + f.depthEnd() * sm);
 			int depth = Math.max(1, (int) Math.round(dmax * (1 - (off / hw) * (off / hw)) + 0.5));
 			int top = w.anyTop(X, Z);
 			for (int y = top; y >= B; y--)
