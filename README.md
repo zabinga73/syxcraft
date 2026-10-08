@@ -52,6 +52,8 @@ To uninstall, delete the files. Placed cities stay in the world.
   - `/syx list`
   - `/syx place "<file>.syxmap" [scale] [at <x> <z> [flat|random|local] [hills] [valleys]]`
   - `/syx cancel`
+  - `/syx clearlitter` clears every dropped leaf litter item stack in the loaded area (piles of them are also cleared
+    automatically).
   - `/syx render` writes a top-down PNG of the last placement to the game folder.
   - `/syx render slice <z> <x1> <x2>` writes a side-view PNG; `/syx render plan <dy>` a floor plan at ground+dy.
   - `/syx check` checks doors (hinges, no more than double doors), panes, attics and floating terrain.

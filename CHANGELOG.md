@@ -2,6 +2,26 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.5
+Syxcraft:
+- No more piles of dropped items after a placement: one scale 3 city in a forest left ~86,000 leaf litter items plus
+  ~30,000 mushrooms and thousands of flowers and lily pads, from plants on the old ground, in caves and under the old
+  hills breaking as the land was rebuilt, mostly in chunks that unloaded before anything could tidy up. Nothing drops as
+  an item while a placement step runs now; plants on the old ground are also taken off quietly first, and anything left
+  that can't stand where it is gets removed at the end.
+- Piled-up leaf litter item stacks are cleared automatically: every few seconds, a loaded chunk with more than 16 leaf
+  litter stacks lying in it has them removed (so the piles in worlds placed with older versions go as you get near
+  them). `/syx clearlitter` clears every leaf litter stack in the loaded area at once.
+- Balticrawler ranches: torches on the fence all round the inside, and on the floor wherever the middle is still dark
+  (nowhere more than about 6 blocks from one). Indoor ranches (dug into mountains, as Balticrawler ranches usually are)
+  now get their pasture too: grass, the fence and the torches, instead of odds and ends.
+- Rooms dug into mountain caves get their floors and fittings.
+- Garthimi hatcheries are fitted out like a daycare (a plank floor), and each breeding spot is a little pen: a mud
+  pit crawling with maggots (pale grubs) inside a mud-brick wall studded with lumps of slime, with lantern posts at
+  its corners.
+- Humidifiers have slime worked back in (a slimy maw, slime oozing from some of the holes, a slime top on the
+  smallest), and the hatcheries' humidifiers are built like the decoration ones.
+
 ## 1.8.4
 Syxcraft:
 - Humidifiers (MONUMENT_BLOB) look like their Songs of Syx sprite instead of a pile of slime: a lumpy, porous vessel of

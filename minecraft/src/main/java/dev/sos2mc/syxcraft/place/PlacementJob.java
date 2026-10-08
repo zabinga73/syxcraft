@@ -195,10 +195,12 @@ public final class PlacementJob {
 		// placement (an item's age is saved, so older items lying here stay)
 		jobs.add(() -> {
 			long ticks = w.level.getGameTime() - startTick;
-			int bl = plan.blendWidth() + 2;
+			int bl = plan.blendWidth() + (plan.st.river ? BED_FADE : 0) + 2;
 			var box = new net.minecraft.world.phys.AABB(plan.X0 - bl, w.minY(), plan.Z0 - bl, plan.X0 + plan.bw + bl, w.maxY(),
 					plan.Z0 + plan.bh + bl);
-			for (var item : w.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box, e -> e.getAge() <= ticks))
+			// leaf litter goes whatever its age: it piles up in forests and lags the game
+			for (var item : w.level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, box,
+					e -> e.getAge() <= ticks || e.getItem().is(net.minecraft.world.item.Items.LEAF_LITTER)))
 				item.discard();
 		});
 		if (plan.st.has(PlaceSettings.CITIZENS))
@@ -356,6 +358,7 @@ public final class PlacementJob {
 						: blendTop[(x - cx0 * 16) + (z - cz0 * 16) * chunksX * 16];
 				if (expect != Integer.MIN_VALUE && expect != Integer.MAX_VALUE)
 					CityPlan.sweepFluids(w, x, z, expect);
+				w.clearUnsupported(x, z);
 			}
 	}
 

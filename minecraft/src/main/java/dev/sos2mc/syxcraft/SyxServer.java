@@ -192,7 +192,37 @@ public final class SyxServer {
 			job.cancel();
 	}
 
+	/**
+	 * Leaf litter item stacks: where a chunk has more than this many lying about, they're left over from a placement
+	 * (or something like it) rather than dropped in play, and they're cleared.
+	 */
+	static final int LITTER_PILE = 16;
+
+	/** discard leaf litter item stacks in loaded chunks: all of them, or only where a chunk has a pile */
+	static int clearLitter(MinecraftServer server, boolean all) {
+		int n = 0;
+		for (ServerLevel level : server.getAllLevels()) {
+			java.util.Map<Long, java.util.List<net.minecraft.world.entity.item.ItemEntity>> byChunk = new java.util.HashMap<>();
+			for (var e : level.getAllEntities())
+				if (e instanceof net.minecraft.world.entity.item.ItemEntity item && item.isAlive()
+						&& item.getItem().is(net.minecraft.world.item.Items.LEAF_LITTER))
+					byChunk.computeIfAbsent(net.minecraft.world.level.ChunkPos.pack(item.blockPosition()), k -> new java.util.ArrayList<>()).add(item);
+			for (var l : byChunk.values())
+				if (all || l.size() > LITTER_PILE)
+					for (var item : l) {
+						item.discard();
+						n++;
+					}
+		}
+		return n;
+	}
+
 	private static void tick(MinecraftServer server) {
+		if (server.getTickCount() % 100 == 37) {
+			int n = clearLitter(server, false);
+			if (n > 0)
+				Syxcraft.LOG.info("cleared {} piled-up leaf litter item stacks", n);
+		}
 		if (riverSearch != null) {
 			ServerPlayer pl = server.getPlayerList().getPlayer(owner);
 			if (riverSearch.isDone()) {
@@ -217,8 +247,14 @@ public final class SyxServer {
 			return;
 		last = job;
 		boolean was = job.running();
-		if (was)
-			job.tick(BUDGET_MS);
+		if (was) {
+			dev.sos2mc.syxcraft.place.WorldWriter.placing = true;
+			try {
+				job.tick(BUDGET_MS);
+			} finally {
+				dev.sos2mc.syxcraft.place.WorldWriter.placing = false;
+			}
+		}
 		if (++ticks % 10 == 0 || (was && !job.running())) {
 			ServerPlayer pl = server.getPlayerList().getPlayer(owner);
 			if (pl != null) {
@@ -279,6 +315,11 @@ public final class SyxServer {
 											"tp @s " + x + ".5 " + y + " " + z + ".5");
 									return 1;
 								}))))
+				.then(Commands.literal("clearlitter").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)).executes(c -> {
+					int n = clearLitter(c.getSource().getServer(), true);
+					c.getSource().sendSystemMessage(Component.literal("Syx: cleared " + n + " leaf litter item stacks in the loaded area."));
+					return n;
+				}))
 				.then(Commands.literal("regen")
 						.then(Commands.argument("x", IntegerArgumentType.integer()).then(Commands.argument("z", IntegerArgumentType.integer())
 								.executes(c -> {

@@ -792,6 +792,9 @@ public final class CityPlan {
 					// lit caves: floor torches, so every bit of cave is lit (see caveTorches)
 					if (st.has(PlaceSettings.CAVE_TORCHES) && u == 0 && v == 0 && caveTorches().get(i))
 						put(col, B + 1, Blocks.TORCH.defaultBlockState());
+					// a room dug into the mountain (a Balticrawler ranch, a farm...) gets its floor and fittings too
+					if (map.roomId(i) != 0)
+						roomGround(col, i, tx, ty, bx, bz, X, Z, h);
 				}
 				top = B + mh;
 			}
@@ -1028,8 +1031,19 @@ public final class CityPlan {
 		}
 		if (key.startsWith("PASTURE_")) {
 			put(col, B, Palette.parse("minecraft:grass_block"));
+			// Balticrawler ranches are dug into mountains: torches on the fence all round, and on the floor where
+			// the middle needs them
+			boolean torch = key.startsWith("PASTURE_BALTI") && bx % s == 0 && bz % s == 0 && ranchTorches().get(i);
 			if (roomEdge(bx, bz)) {
 				put(col, B + 1, Palette.parse("minecraft:oak_fence"));
+				if (torch) {
+					put(col, B + 2, Blocks.TORCH.defaultBlockState());
+					return B + 2;
+				}
+				return B + 1;
+			}
+			if (torch) {
+				put(col, B + 1, Blocks.TORCH.defaultBlockState());
 				return B + 1;
 			}
 			return B;
@@ -1099,6 +1113,10 @@ public final class CityPlan {
 			// hanging lanterns on a 5-block grid keep every interior lit (no mob spawning indoors)
 			if (Math.floorMod(X, 5) == 2 && Math.floorMod(Z, 5) == 2)
 				hangLantern(col, bx, bz);
+			// an indoor ranch (Balticrawlers, dug into a mountain) still gets its pasture: grass, fence and torches
+			SyxMap.Blueprint rb = map.roomId(i) != 0 ? map.blueprintAt(i) : null;
+			if (rb != null && rb.key != null && rb.key.startsWith("PASTURE_"))
+				return Math.max(B + H, roomGround(col, i, tx, ty, bx, bz, X, Z, h));
 			return B + H;
 		}
 		case DOOR -> {
@@ -1212,6 +1230,12 @@ public final class CityPlan {
 	/* ------------------------------------------------------------------ */
 
 	private BlockState surfaceBlock(int i, long h) {
+		if (map.roomId(i) != 0) {
+			// a Garthimi hatchery is fitted out like a daycare: a plank floor
+			SyxMap.Blueprint bp = map.blueprintAt(i);
+			if (bp != null && bp.key != null && bp.key.startsWith("BREEDER_GARTHIMI"))
+				return pal.get("floor.WOOD");
+		}
 		if (map.floor[i] != 0) {
 			String fk = map.floorKey(i);
 			if ((map.floorDegrade[i] & 0xFF) > 160 && ((h >> 9) & 3) == 0)
@@ -1422,6 +1446,7 @@ public final class CityPlan {
 	/** write a column: built blocks, filled ground below, cleared space above */
 	private void write(WorldWriter w, int X, int Z, BlockState[] col, int top, int dh) {
 		final int B = this.B + dh; // the column's own ground level
+		w.clearFragile(X, Z);
 		top += dh;
 		int lowest = Integer.MAX_VALUE, highest = top;
 		for (int idx = 0; idx < col.length; idx++) {
@@ -1487,6 +1512,7 @@ public final class CityPlan {
 		}
 		if (ring > width)
 			return Integer.MIN_VALUE;
+		w.clearFragile(X, Z);
 		// the city column this ramps away from: the nearest one of its shape (unsquare), or straight in from the edge
 		int sx = Math.max(0, Math.min(bw - 1, bx)), sz = Math.max(0, Math.min(bh - 1, bz));
 		if (shapeSrc != null) {
@@ -1833,6 +1859,7 @@ public final class CityPlan {
 				continue;
 			int dmax = (int) Math.round(f.depth() * (1 - sm) + f.depthEnd() * sm);
 			int depth = Math.max(1, (int) Math.round(dmax * (1 - (off / hw) * (off / hw)) + 0.5));
+			w.clearFragile(X, Z);
 			int top = w.anyTop(X, Z);
 			for (int y = top; y >= B; y--)
 				w.air(X, y, Z);
@@ -1864,31 +1891,62 @@ public final class CityPlan {
 		return (a == 0 && b == 0) || (a == 6 && b == 6);
 	}
 
-	private java.util.BitSet caveTorches;
+	private java.util.BitSet caveTorches, ranchTorches;
+
+	/** which cave tiles (outside rooms) get a torch: see torchPlan */
+	private java.util.BitSet caveTorches() {
+		if (caveTorches == null)
+			caveTorches = torchPlan(i -> kind[i] == CAVE, i -> kind[i] == CAVE && map.roomId(i) == 0, i -> false);
+		return caveTorches;
+	}
+
+	/** which Balticrawler ranch tiles get a torch: along the fence first, then wherever the middle is still dark */
+	private java.util.BitSet ranchTorches() {
+		if (ranchTorches == null) {
+			java.util.function.IntPredicate ranch = i -> {
+				SyxMap.Blueprint bp = map.roomId(i) != 0 ? map.blueprintAt(i) : null;
+				return bp != null && bp.key != null && bp.key.startsWith("PASTURE_BALTI");
+			};
+			ranchTorches = torchPlan(ranch, i -> ranch.test(i) && !hasFurniture(i), i -> {
+				int tx = i % map.width, ty = i / map.width, id = map.roomId(i);
+				for (int k = 0; k < 4; k++)
+					if (!map.inBounds(tx + DX[k], ty + DY[k]) || map.roomId(map.idx(tx + DX[k], ty + DY[k])) != id)
+						return true;
+				return false;
+			});
+		}
+		return ranchTorches;
+	}
 
 	/**
-	 * Which cave tiles (outside rooms) get a torch. Grid spots first, then a torch on any cave tile still more than about
-	 * 6 blocks from one, walking through the cave, so narrow winding tunnels are lit as well as broad halls (a torch
-	 * lights 14, so the darkest spot stays at 7 or more and nothing spawns).
+	 * Torches for an area of tiles (walk: tiles light spreads through; place: tiles that may hold one; edge: tiles
+	 * tried first). Edge tiles first, then grid spots, then a torch on any tile still more than about 6 blocks from one,
+	 * walking through the area, so narrow winding parts are lit as well as broad halls (a torch lights 14, so the darkest
+	 * spot stays at 7 or more and nothing spawns).
 	 */
-	private java.util.BitSet caveTorches() {
-		if (caveTorches != null)
-			return caveTorches;
+	private java.util.BitSet torchPlan(java.util.function.IntPredicate walk, java.util.function.IntPredicate place,
+			java.util.function.IntPredicate edge) {
 		java.util.BitSet torch = new java.util.BitSet(map.width * map.height);
 		int r = Math.max(1, 6 / s); // reach in tiles
 		int[] dist = new int[map.width * map.height];
 		java.util.Arrays.fill(dist, Integer.MAX_VALUE);
-		List<Integer> grid = new ArrayList<>(), rest = new ArrayList<>();
+		List<Integer> first = new ArrayList<>(), grid = new ArrayList<>(), rest = new ArrayList<>();
 		for (int ty = ty0; ty <= ty1; ty++)
 			for (int tx = tx0; tx <= tx1; tx++) {
 				int i = map.idx(tx, ty);
-				if (kind[i] != CAVE || map.roomId(i) != 0)
+				if (!place.test(i))
 					continue;
-				(torchSpot(X0 + (tx - tx0) * s, Z0 + (ty - ty0) * s) ? grid : rest).add(i);
+				boolean spot = torchSpot(X0 + (tx - tx0) * s, Z0 + (ty - ty0) * s);
+				// along an edge, every few tiles (a torch on every fence post would be a lot)
+				if (edge.test(i))
+					(Math.floorMod(tx + ty, Math.max(2, 5 / s)) == 0 ? first : rest).add(i);
+				else
+					(spot ? grid : rest).add(i);
 			}
-		grid.addAll(rest);
-		java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
-		for (int i : grid) {
+		first.addAll(grid);
+		first.addAll(rest);
+		ArrayDeque<Integer> q = new ArrayDeque<>();
+		for (int i : first) {
 			if (dist[i] <= r)
 				continue;
 			torch.set(i);
@@ -1903,14 +1961,14 @@ public final class CityPlan {
 					if (nx < tx0 || ny < ty0 || nx > tx1 || ny > ty1)
 						continue;
 					int n = map.idx(nx, ny);
-					if (kind[n] == CAVE && dist[n] > dist[c] + 1) {
+					if (walk.test(n) && dist[n] > dist[c] + 1) {
 						dist[n] = dist[c] + 1;
 						q.add(n);
 					}
 				}
 			}
 		}
-		return caveTorches = torch;
+		return torch;
 	}
 
 	static long hash(int x, int z) {

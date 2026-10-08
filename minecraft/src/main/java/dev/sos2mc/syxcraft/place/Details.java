@@ -131,6 +131,8 @@ final class Details {
 				|| room.startsWith("FIGHTPIT_") || room.startsWith("_STOCKADE") || room.startsWith("_WATERPUMP")
 				|| room.startsWith("STAGE_") || room.startsWith("_EXECUTION") || room.startsWith("MONUMENT_DEATH"))
 			return;
+		if (room.startsWith("BREEDER_GARTHIMI") && breederHumidifier(sprite))
+			return; // a humidifier, built whole in furnitureItem()
 		long h = CityPlan.hash(tx * 31 + 7, ty * 17 + 11);
 		int x0 = p.blockX(tx), z0 = p.blockZ(ty);
 		// colours (stall canopies, carpets) stay the same across one room
@@ -189,6 +191,21 @@ final class Details {
 		if (room.startsWith("LIBRARY") || room.startsWith("UNIVERSITY") || room.startsWith("SCHOOL"))
 			if (has(sp, "SHELF", "BOOK", "STORAGE"))
 				return stack("minecraft:bookshelf", "minecraft:bookshelf");
+		if (room.startsWith("BREEDER_GARTHIMI")) {
+			// the Garthimi hatchery: each breeding spot is a little pen of maggots. Its rim and middle are the maggot pit,
+			// the ring of organic blobs round it a mud-brick wall with lumps of slime, the tables at its corners posts
+			if (has(sp, "RIM_DECOR"))
+				return (w, x, y, z, u, v, d, hh) -> w.set(x, y, z, P((hh & 3) == 0 ? "minecraft:slime_block" : "minecraft:mud_brick_wall"));
+			if (has(sp, "RIM") || sp.isEmpty())
+				return (w, x, y, z, u, v, d, hh) -> {
+					w.set(x, y - 1, z, P("minecraft:mud"));
+					// maggots: little clusters of pale grubs (unlit white candles)
+					if ((hh & 3) != 0)
+						w.set(x, y, z, P("minecraft:white_candle[candles=" + (1 + (hh >> 2) % 4) + ",lit=false]"));
+				};
+			if (has(sp, "CORNER"))
+				return single("minecraft:mud_brick_wall");
+		}
 		if (room.startsWith("MONUMENT_"))
 			return monument(room.substring(9));
 		if (room.startsWith("GRAVEYARD") || room.startsWith("TOMB"))
@@ -265,6 +282,8 @@ final class Details {
 		else if (room.startsWith("MONUMENT_TORCH"))
 			torchMonument(w, f);
 		else if (room.startsWith("MONUMENT_BLOB"))
+			humidifier(w, f);
+		else if (room.startsWith("BREEDER_GARTHIMI") && humidifierItem(bp, item))
 			humidifier(w, f);
 		else if (room.startsWith("_BENCH"))
 			bench(w, f);
@@ -1363,9 +1382,31 @@ final class Details {
 			}
 	}
 
+	/** a hatchery tile that belongs to a humidifier (its organic blob sprites, not the blobs on the pens' rims) */
+	private static boolean breederHumidifier(String sprite) {
+		return sprite.contains("DECOR") && !sprite.contains("RIM");
+	}
+
+	/** is this hatchery item a humidifier? by its name, or else by its tiles all being humidifier tiles */
+	private static boolean humidifierItem(SyxMap.Blueprint bp, SyxMap.FurnItem item) {
+		if (item.groupName() != null && item.groupName().toUpperCase().contains("HUMID"))
+			return true;
+		boolean any = false;
+		for (int[] row : item.tiles())
+			for (int t : row) {
+				SyxMap.FurnTile ft = bp.tiles.get(t);
+				if (ft == null || ft.spriteKey() == null)
+					continue;
+				if (!breederHumidifier(ft.spriteKey().toUpperCase()))
+					return false;
+				any = true;
+			}
+		return any;
+	}
+
 	/**
 	 * The humidifier (MONUMENT_BLOB), after its Songs of Syx sprite: a lumpy, porous vessel of mauve clay with a pale
-	 * rim round its open top and round holes in its sides, dark red flesh showing inside. Bulbous low down, narrowing to
+	 * rim round its open top and round holes in its sides, dark red flesh or slime showing inside. Bulbous low down, narrowing to
 	 * a neck under the rim, a little taller than it is wide.
 	 */
 	private void humidifier(WorldWriter w, SyxMap.Furniture f) {
@@ -1377,13 +1418,13 @@ final class Details {
 		int n = Math.min(bw, bh);
 		long h = CityPlan.hash(x0 * 13 + 5, z0 * 7 + 3);
 		BlockState body = P("minecraft:light_gray_terracotta"), pale = P("minecraft:white_terracotta"),
-				rim = P("minecraft:smooth_sandstone"), flesh = P("minecraft:nether_wart_block");
+				rim = P("minecraft:smooth_sandstone"), flesh = P("minecraft:nether_wart_block"), slime = P("minecraft:slime_block");
 		if (n == 1) {
-			// one block across: a mauve lump with its rim on top
+			// one block across: a mauve lump with a glistening slimy top
 			for (int dz = 0; dz < bh; dz++)
 				for (int dx = 0; dx < bw; dx++) {
-					w.set(x0 + dx, B + 1, z0 + dz, (h & 1) == 0 ? body : flesh);
-					w.set(x0 + dx, B + 2, z0 + dz, rim);
+					w.set(x0 + dx, B + 1, z0 + dz, body);
+					w.set(x0 + dx, B + 2, z0 + dz, slime);
 				}
 			return;
 		}
@@ -1413,7 +1454,7 @@ final class Details {
 					if (k == top - 1)
 						b = inner ? net.minecraft.world.level.block.Blocks.AIR.defaultBlockState() : rim; // the open mouth
 					else if (inner)
-						b = k == top - 2 ? flesh : body; // the maw seen from above
+						b = k == top - 2 ? slime : body; // the moist maw seen from above
 					else {
 						b = ((CityPlan.hash(x, y * 31 + z) & 7) == 0) ? pale : body; // porous flecks
 						for (int j = 0; j < holes; j++) {
@@ -1421,7 +1462,7 @@ final class Details {
 							double dy = Math.abs(ny - hy[j]) * top;
 							double size = n <= 2 ? 0.9 : 0.35 + 0.6 / n;
 							if (da < size && dy < 0.6)
-								b = flesh; // the hole
+								b = j % 2 == 0 ? flesh : slime; // the hole: flesh, or slime oozing out
 							else if (n > 2 && da < size + 0.45 && dy < 1.4)
 								b = pale; // its pale lip
 						}

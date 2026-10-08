@@ -12,6 +12,8 @@ public final class WorldWriter {
 
 	public static final int FLAGS = Block.UPDATE_CLIENTS;
 	/** for double blocks (doors, beds) whose halves must not be validated against each other mid-placement */
+	/** true while a placement step runs on the server thread: item drops are suppressed then (NoDropsWhilePlacingMixin) */
+	public static volatile boolean placing;
 	public static final int FLAGS_RAW = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
 
 	public final ServerLevel level;
@@ -55,6 +57,34 @@ public final class WorldWriter {
 	public void setIfAir(int x, int y, int z, BlockState s) {
 		if (get(x, y, z).isAir())
 			set(x, y, z, s);
+	}
+
+	/**
+	 * Quietly take the plants off a column's natural ground (leaf litter, grass, flowers, snow) before it's rebuilt.
+	 * Writing the ground under them makes Minecraft ask them whether they can still stand there, and they'd break and
+	 * drop as items: leaf litter by the ten thousand in a forest, in chunks nothing cleans up later.
+	 */
+	public void clearFragile(int x, int z) {
+		int g = groundTop(x, z);
+		for (int y = g + 2; y > g; y--) {
+			BlockState s = get(x, y, z);
+			if (!s.isAir() && s.getFluidState().isEmpty() && (s.canBeReplaced() || s.is(Blocks.LEAF_LITTER)))
+				set(x, y, z, Blocks.AIR.defaultBlockState(), FLAGS_RAW);
+		}
+	}
+
+	/**
+	 * Remove what can't stay where it is at the top of a column (leaf litter, plants, snow left on ground that was
+	 * rebuilt under them). Blocks are written without telling their neighbours, so these would otherwise hang on until
+	 * something nudges them, then pop off as item stacks, piles of them in a forest.
+	 */
+	public void clearUnsupported(int x, int z) {
+		int top = anyTop(x, z);
+		for (int y = top; y > top - 3 && y > minY(); y--) {
+			BlockState s = get(x, y, z);
+			if (!s.isAir() && s.getFluidState().isEmpty() && !s.canSurvive(level, pos.set(x, y, z)))
+				set(x, y, z, Blocks.AIR.defaultBlockState());
+		}
 	}
 
 	public void air(int x, int y, int z) {
