@@ -127,7 +127,7 @@ final class Details {
 		if (room.startsWith("SHRINE_") || room.startsWith("TEMPLE_") || room.equals("_HOME") || room.startsWith("_THRONE")
 				|| room.startsWith("WELL_") || room.startsWith("SPEAKER_") || room.startsWith("POOL_")
 				|| room.startsWith("_WATER") || room.startsWith("_CONSTRUCTION") || room.startsWith("MONUMENT_NATURE")
-				|| room.startsWith("MONUMENT_TORCH") || room.startsWith("_BENCH") || room.startsWith("MONUMENT_SCULPTURE")
+				|| room.startsWith("MONUMENT_TORCH") || room.startsWith("MONUMENT_BLOB") || room.startsWith("_BENCH") || room.startsWith("MONUMENT_SCULPTURE")
 				|| room.startsWith("FIGHTPIT_") || room.startsWith("_STOCKADE") || room.startsWith("_WATERPUMP")
 				|| room.startsWith("STAGE_") || room.startsWith("_EXECUTION") || room.startsWith("MONUMENT_DEATH"))
 			return;
@@ -264,6 +264,8 @@ final class Details {
 			nature(w, f, item.groupName() == null ? "" : item.groupName());
 		else if (room.startsWith("MONUMENT_TORCH"))
 			torchMonument(w, f);
+		else if (room.startsWith("MONUMENT_BLOB"))
+			humidifier(w, f);
 		else if (room.startsWith("_BENCH"))
 			bench(w, f);
 		else if (room.startsWith("MONUMENT_SCULPTURE"))
@@ -1361,6 +1363,74 @@ final class Details {
 			}
 	}
 
+	/**
+	 * The humidifier (MONUMENT_BLOB), after its Songs of Syx sprite: a lumpy, porous vessel of mauve clay with a pale
+	 * rim round its open top and round holes in its sides, dark red flesh showing inside. Bulbous low down, narrowing to
+	 * a neck under the rim, a little taller than it is wide.
+	 */
+	private void humidifier(WorldWriter w, SyxMap.Furniture f) {
+		humidifier(w, p.blockX(f.x()), p.blockZ(f.y()), f.w() * s, f.h() * s, B);
+	}
+
+	/** a humidifier filling bw x bh blocks at x0/z0, standing on the floor at B */
+	static void humidifier(WorldWriter w, int x0, int z0, int bw, int bh, int B) {
+		int n = Math.min(bw, bh);
+		long h = CityPlan.hash(x0 * 13 + 5, z0 * 7 + 3);
+		BlockState body = P("minecraft:light_gray_terracotta"), pale = P("minecraft:white_terracotta"),
+				rim = P("minecraft:smooth_sandstone"), flesh = P("minecraft:nether_wart_block");
+		if (n == 1) {
+			// one block across: a mauve lump with its rim on top
+			for (int dz = 0; dz < bh; dz++)
+				for (int dx = 0; dx < bw; dx++) {
+					w.set(x0 + dx, B + 1, z0 + dz, (h & 1) == 0 ? body : flesh);
+					w.set(x0 + dx, B + 2, z0 + dz, rim);
+				}
+			return;
+		}
+		int top = Math.max(3, (int) Math.round(n * 1.3)); // levels
+		double cx = bw / 2.0, cz = bh / 2.0;
+		// the holes in its sides: a direction round the body and a height each
+		int holes = n <= 2 ? 2 : 4;
+		double[] ha = new double[holes], hy = new double[holes];
+		for (int k = 0; k < holes; k++) {
+			ha[k] = 2 * Math.PI * (k + 0.25 * ((h >> (k * 4)) & 3)) / holes;
+			hy[k] = k % 2 == 0 ? 0.3 : 0.55;
+		}
+		for (int k = 0; k < top; k++) {
+			double ny = top == 1 ? 0 : k / (double) (top - 1);
+			// bulbous low down, a neck under the rim, the rim flaring out a little
+			double r = ny < 0.35 ? 0.85 + 0.2 * ny / 0.35 : ny < 0.8 ? 1.05 - 0.25 * (ny - 0.35) / 0.45 : 0.8 + 0.12 * (ny - 0.8) / 0.2;
+			for (int dz = 0; dz < bh; dz++)
+				for (int dx = 0; dx < bw; dx++) {
+					double nx = (dx + 0.5 - cx) / cx, nz = (dz + 0.5 - cz) / cz, a = Math.atan2(nz, nx);
+					double lump = 0.07 * Math.sin(3 * a + (h & 7)) + 0.04 * Math.sin(5 * a + k);
+					double d = Math.sqrt(nx * nx + nz * nz);
+					if (n > 2 && d > r + lump)
+						continue;
+					int x = x0 + dx, y = B + 1 + k, z = z0 + dz;
+					boolean inner = n > 3 && d < r + lump - 2.2 / n; // not on the surface
+					BlockState b;
+					if (k == top - 1)
+						b = inner ? net.minecraft.world.level.block.Blocks.AIR.defaultBlockState() : rim; // the open mouth
+					else if (inner)
+						b = k == top - 2 ? flesh : body; // the maw seen from above
+					else {
+						b = ((CityPlan.hash(x, y * 31 + z) & 7) == 0) ? pale : body; // porous flecks
+						for (int j = 0; j < holes; j++) {
+							double da = Math.abs(Math.atan2(Math.sin(a - ha[j]), Math.cos(a - ha[j])));
+							double dy = Math.abs(ny - hy[j]) * top;
+							double size = n <= 2 ? 0.9 : 0.35 + 0.6 / n;
+							if (da < size && dy < 0.6)
+								b = flesh; // the hole
+							else if (n > 2 && da < size + 0.45 && dy < 1.4)
+								b = pale; // its pale lip
+						}
+					}
+					w.set(x, y, z, b);
+				}
+		}
+	}
+
 	/** a row of benches: stairs along the item, backs on one side */
 	private void bench(WorldWriter w, SyxMap.Furniture f) {
 		int x0 = p.blockX(f.x()), z0 = p.blockZ(f.y()), bw = f.w() * s, bh = f.h() * s;
@@ -1534,11 +1604,6 @@ final class Details {
 					w.set(x, y, z, P("minecraft:flowering_azalea"));
 				else
 					w.set(x, y, z, CityPlan.Blocks1.flower((int) (h >> 3)));
-			}
-			case "BLOB" -> {
-				w.set(x, y, z, P("minecraft:slime_block"));
-				if ((h & 1) == 0)
-					w.set(x, y + 1, z, P("minecraft:slime_block"));
 			}
 			default -> {
 				for (int k = 0; k < Math.min(H, 3); k++)

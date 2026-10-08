@@ -2,6 +2,13 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.4
+Syxcraft:
+- Humidifiers (MONUMENT_BLOB) look like their Songs of Syx sprite instead of a pile of slime: a lumpy, porous vessel of
+  mauve clay (light grey terracotta flecked with white), bulbous low down with a neck under a flared sandstone rim,
+  round holes in its sides showing dark red flesh (nether wart) behind pale lips, and an open mouth lined with flesh
+  on the bigger ones. Sized to the item: about 1.3 times as tall as it is wide.
+
 ## 1.8.3
 Syxcraft:
 - [Teleport to the city centre] no longer drops you under the world: the far-away chunk is loaded before its height is
