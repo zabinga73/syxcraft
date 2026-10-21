@@ -2,6 +2,14 @@
 
 Versions cover both parts: the Songs of Syx exporter (`exporter/`) and the Minecraft mod Syxcraft (`minecraft/`).
 
+## 1.8.6
+Syxcraft:
+- Orchards are real orchards: every tree spot grows an oak sized to its plot (a 2x2 trunk at scale 3), in rows with a
+  walkway between the crowns, hung with glow berries for the fruit. Each tree stands on a mulched ring with a few fallen
+  leaves round it, and every fifth one has a picking ladder against its trunk. The orchard's store is crates of picked
+  fruit (barrels), full composters for the windfalls and now and then a beehive. Before, the trees came out as
+  scattered odds and ends of furniture.
+
 ## 1.8.5
 Syxcraft:
 - No more piles of dropped items after a placement: one scale 3 city in a forest left ~86,000 leaf litter items plus

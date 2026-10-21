@@ -133,6 +133,8 @@ final class Details {
 			return;
 		if (room.startsWith("BREEDER_GARTHIMI") && breederHumidifier(sprite))
 			return; // a humidifier, built whole in furnitureItem()
+		if (room.startsWith("ORCHARD_") && sprite.startsWith("TREE"))
+			return; // fruit trees, grown whole in furnitureItem()
 		long h = CityPlan.hash(tx * 31 + 7, ty * 17 + 11);
 		int x0 = p.blockX(tx), z0 = p.blockZ(ty);
 		// colours (stall canopies, carpets) stay the same across one room
@@ -206,6 +208,8 @@ final class Details {
 			if (has(sp, "CORNER"))
 				return single("minecraft:mud_brick_wall");
 		}
+		if (room.startsWith("ORCHARD_") && has(sp, "STORAGE"))
+			return fruitStore();
 		if (room.startsWith("MONUMENT_"))
 			return monument(room.substring(9));
 		if (room.startsWith("GRAVEYARD") || room.startsWith("TOMB"))
@@ -303,6 +307,103 @@ final class Details {
 			execution(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
 		else if (room.startsWith("MONUMENT_DEATH"))
 			deathMonument(w, f, item.groupName() == null ? "" : item.groupName().toUpperCase());
+		else if (room.startsWith("ORCHARD_"))
+			orchardRow(w, f, bp, item);
+	}
+
+	/* ------------------------------------------------------------ orchards */
+
+	/** an orchard row: an oak on every 2x2 block of tree tiles in the item, the gaps between them left as grass */
+	private void orchardRow(WorldWriter w, SyxMap.Furniture f, SyxMap.Blueprint bp, SyxMap.FurnItem item) {
+		int[][] g = item.tiles();
+		if (g == null)
+			return;
+		for (int r = 0; r < g.length; r++)
+			for (int c = 0; c < g[r].length; c++)
+				if (orchardTreeTile(bp, g, r, c) && !orchardTreeTile(bp, g, r - 1, c) && !orchardTreeTile(bp, g, r, c - 1))
+					fruitTree(w, p.blockX(f.x() + c), p.blockZ(f.y() + r), 2 * s);
+	}
+
+	private static boolean orchardTreeTile(SyxMap.Blueprint bp, int[][] g, int r, int c) {
+		if (r < 0 || c < 0 || r >= g.length || c >= g[r].length || g[r][c] < 0)
+			return false;
+		SyxMap.FurnTile t = bp.tiles.get(g[r][c]);
+		return t != null && t.spriteKey() != null && t.spriteKey().toUpperCase().startsWith("TREE");
+	}
+
+	/**
+	 * A fruit tree: an oak with a rounded crown as wide as its W x W plot plus the aisle's edge, hung with glow berries
+	 * for the fruit, a mulched foot with a few fallen leaves, and now and then a picking ladder against the trunk.
+	 * Trees stand a tile apart, so neighbouring crowns leave a one-block gap to walk through.
+	 */
+	private void fruitTree(WorldWriter w, int x0, int z0, int W) {
+		long h = CityPlan.hash(x0 * 7 + 3, z0 * 13 + 5);
+		boolean wide = W >= 6;
+		int tw = wide ? 2 : 1, tx0 = x0 + (W - tw) / 2, tz0 = z0 + (W - tw) / 2;
+		double cx = tx0 + (tw - 1) / 2.0, cz = tz0 + (tw - 1) / 2.0;
+		int R = Math.max(1, W / 2), lower = R >= 3 ? 3 : 2;
+		int trunkTop = B + lower + 2 + (int) (h % 2) + (R >= 3 ? 1 : 0);
+		BlockState log = P("minecraft:oak_log"), leaves = P("minecraft:oak_leaves[persistent=true]");
+		// the plot under the crown: grass, a mulched ring round the trunk, a few fallen leaves
+		for (int dz = 0; dz < W; dz++)
+			for (int dx = 0; dx < W; dx++) {
+				int x = x0 + dx, z = z0 + dz;
+				long hh = CityPlan.hash(x * 5 + 1, z * 3 + 2);
+				boolean ring = Math.abs(x - cx) <= tw / 2.0 + 0.6 && Math.abs(z - cz) <= tw / 2.0 + 0.6;
+				w.set(x, B, z, P(ring ? ((hh & 1) == 0 ? "minecraft:rooted_dirt" : "minecraft:coarse_dirt") : "minecraft:grass_block"));
+				if (!ring && hh % 5 == 0)
+					w.set(x, B + 1, z, P("minecraft:leaf_litter[segment_amount=" + (1 + (hh >> 3) % 3) + ",facing="
+							+ HORIZ[(int) ((hh >> 6) & 3)] + "]"));
+			}
+		for (int y = B + 1; y <= trunkTop; y++)
+			for (int a = 0; a < tw; a++)
+				for (int b = 0; b < tw; b++)
+					w.set(tx0 + a, y, tz0 + b, log);
+		// the crown: wide lower layers, a narrower top two; corners filled now and then so it isn't a perfect dome
+		double r = wide ? R + 0.5 : R, ru = Math.max(1, r - 1);
+		int ext = (int) Math.ceil(r) + 1, bottom = trunkTop - lower + 1;
+		for (int y = bottom; y <= trunkTop + 1; y++) {
+			double rr = y <= trunkTop - 1 ? r : ru;
+			for (int z = (int) Math.floor(cz) - ext; z <= (int) Math.ceil(cz) + ext; z++)
+				for (int x = (int) Math.floor(cx) - ext; x <= (int) Math.ceil(cx) + ext; x++) {
+					double ddx = Math.abs(x - cx), ddz = Math.abs(z - cz);
+					if (ddx > rr || ddz > rr)
+						continue;
+					double d2 = ddx * ddx + ddz * ddz, in = (rr + (rr >= 2 ? 0.5 : 0.2)) * (rr + (rr >= 2 ? 0.5 : 0.2));
+					if (d2 <= in || CityPlan.hash(x * 11 + y, z * 17 - y) % 3 == 0)
+						w.setIfAir(x, y, z, leaves);
+				}
+		}
+		// fruit: glow berries hanging from the underside of the crown, off the trunk
+		for (int z = (int) Math.floor(cz) - ext; z <= (int) Math.ceil(cz) + ext; z++)
+			for (int x = (int) Math.floor(cx) - ext; x <= (int) Math.ceil(cx) + ext; x++) {
+				if (Math.abs(x - cx) < tw / 2.0 + 0.6 && Math.abs(z - cz) < tw / 2.0 + 0.6)
+					continue;
+				if (w.get(x, bottom, z).is(net.minecraft.world.level.block.Blocks.OAK_LEAVES) && CityPlan.hash(x * 19 + 4, z * 23 + 9) % 3 == 0)
+					w.setIfAir(x, bottom - 1, z, P("minecraft:cave_vines[berries=true,age=25]"));
+			}
+		// a picking ladder up the south side of every fifth tree
+		if ((h >> 4) % 5 == 0)
+			for (int y = B + 1; y < bottom; y++)
+				w.set(tx0, y, tz0 + tw, P("minecraft:ladder[facing=south]"));
+	}
+
+	private static final String[] HORIZ = { "north", "east", "south", "west" };
+
+	/** the orchard's store: crates of picked fruit (barrels), a full composter for the windfalls, now and then a hive */
+	private Piece fruitStore() {
+		return (w, x, y, z, u, v, d, h) -> {
+			int k = (int) (h % 7);
+			if (k == 0)
+				w.set(x, y, z, P("minecraft:composter[level=8]"));
+			else if (k == 1)
+				w.set(x, y, z, P("minecraft:beehive[facing=south,honey_level=5]"));
+			else {
+				w.set(x, y, z, P("minecraft:barrel[facing=up]"));
+				if (k >= 5 && H >= 3)
+					w.set(x, y + 1, z, P("minecraft:barrel[facing=up]"));
+			}
+		};
 	}
 
 	/* ------------------------------------------------------ death monuments */
